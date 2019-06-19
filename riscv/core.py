@@ -123,7 +123,7 @@ class Core(object):
                 reg_str += ' '
 
         reg_str += ']'
-        format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}'
+        format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}\n'
         return format_str.format(name=self.name, pc=self.__pcb.pc.data, lr=self.__lr.data, clock=self.clock,
                                  regs=reg_str)
 

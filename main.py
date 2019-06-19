@@ -3,7 +3,7 @@
 import threading
 import logging
 import time
-from riscv import core, util
+from riscv import core, util, memory
 
 
 def run_cpu(cpu: core.Core):
@@ -18,14 +18,19 @@ def run_cpu(cpu: core.Core):
 
 
 def main():
-    format = "[%(threadName)s %(asctime)s,%(msecs)d]: %(message)s"
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
 
-    logging.basicConfig(format=format, level=logging.DEBUG, datefmt="%H:%M:%S")
+    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
 
     # TODO: create data structures
     global_vars = util.GlobalVars(2)
+
+    cache_ins0 = memory.CacheMemAssoc('$_Ins0', 0, 1024, 4, 8, 4, 4)
+    logging.info(str(cache_ins0))
+
     core0 = core.Core('CPU0', global_vars)
     core1 = core.Core('CPU1', global_vars)
+
 
     # Spawn child Threads
     t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, ))
