@@ -7,20 +7,20 @@ LR_ADDRESS = 33
 
 
 class Register(object):
-    __address: int
-    __reg_type: str
-    __zero_reg: bool
+    address: int
+    reg_type: str
+    zero_reg: bool
     __data: int
 
-    def __init__(self, address, reg_type, zero_reg=False):
-        self.__address = address
-        self.__reg_type = reg_type
-        self.__zero_reg = zero_reg
+    def __init__(self, address: int, reg_type: str, zero_reg: bool = False):
+        self.address = address
+        self.reg_type = reg_type
+        self.zero_reg = zero_reg
         self.__data = 0
 
     @property
     def data(self):
-        if self.__zero_reg:
+        if self.zero_reg:
             return 0
         else:
             return self.__data
@@ -30,13 +30,17 @@ class Register(object):
         """ Set the register's value
         :type var: int
         """
-        if self.__zero_reg:
+        if self.zero_reg:
             raise Exception('Trying to set Zero Register value')
         else:
             self.__data = var
 
 
 class Pcb(object):
+    registers: List[Register]
+    pc: Register
+    quantum: int
+
     def __init__(self):
         self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
         self.pc = Register(PC_ADDRESS, 'PC')
@@ -45,12 +49,14 @@ class Pcb(object):
 
 class Core(object):
     r"""Clase que modela el núcleo"""
-    __registers: List[Register]
     __lr: Register
-    __lr_lock: Lock
+    __lr_lock: threading.Lock
     __pcb: Optional[Pcb]
 
-    def __init__(self, global_vars):
+    def __init__(self, name: str, global_vars):
+
+        self.name = name
+        self.clock = 0
 
         self.__global_vars = global_vars
         self.__pcb = Pcb()
@@ -58,14 +64,8 @@ class Core(object):
         self.__lr = Register(LR_ADDRESS, 'LR')
         self.__lr_lock = threading.Lock()
 
-        self.__data_cache = None
-        self.__inst_cache = None
-
-    def set_data_cache(self, cache: object):
-        self.__data_cache = cache
-
-    def set_inst_cache(self, cache: object):
-        self.__inst_cache = cache
+        self.data_cache = None
+        self.inst_cache = None
 
     def fetch(self):
         pass
@@ -92,9 +92,18 @@ class Core(object):
 
         if self.__pcb.quantum > 0:
             self.__pcb.quantum -= 1
-        else:
-            self.context_switch()
 
         return
 
+    def __str__(self):
+        reg_str = '[ '
+        for i in range(len(self.__pcb.registers)):
+            reg = self.__pcb.registers[i]
+            reg_str += '[{dir:d}: {data:d}]'.format(dir=reg.address, data=reg.data)
+            if i < len(self.__pcb.registers) - 1:
+                reg_str += ','
+            reg_str += ' '
+        reg_str += ']'
+        format_str = '{name:s}:\n\nPC: {pc:d}, LR: {lr:d}\nRegs: {regs:s}'
+        return format_str.format(name=self.name, pc=self.__pcb.pc.data, lr=self.__lr.data, regs=reg_str)
 
