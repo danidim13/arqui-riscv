@@ -1,24 +1,31 @@
+#!/usr/bin/python3
+
 import threading
 import logging
 import time
-from riscv import core
+from riscv import core, util
 
 
-def run_cpu(cpu):
+def run_cpu(cpu: core.Core):
+
     logging.info('Starting thread %s', threading.current_thread().getName())
     logging.info(str(cpu))
-    time.sleep(5)
+
+    for i in range(5):
+        cpu.step()
+
     logging.info('Thread ending %s', threading.current_thread().getName())
 
 
 def main():
-    format = "%(asctime)s: %(message)s"
+    format = "[%(threadName)s %(asctime)s,%(msecs)d]: %(message)s"
 
-    logging.basicConfig(format=format, level=logging.INFO, datefmt="%H:%M:%S")
+    logging.basicConfig(format=format, level=logging.DEBUG, datefmt="%H:%M:%S")
 
     # TODO: create data structures
-    core0 = core.Core('CPU0', None)
-    core1 = core.Core('CPU1', None)
+    global_vars = util.GlobalVars(2)
+    core0 = core.Core('CPU0', global_vars)
+    core1 = core.Core('CPU1', global_vars)
 
     # Spawn child Threads
     t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, ))

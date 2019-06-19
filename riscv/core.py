@@ -1,5 +1,7 @@
 import threading
+import logging
 from typing import List, Optional
+from .util import GlobalVars
 
 
 PC_ADDRESS = 32
@@ -52,8 +54,9 @@ class Core(object):
     __lr: Register
     __lr_lock: threading.Lock
     __pcb: Optional[Pcb]
+    __global_vars: GlobalVars
 
-    def __init__(self, name: str, global_vars):
+    def __init__(self, name: str, global_vars: GlobalVars):
 
         self.name = name
         self.clock = 0
@@ -90,20 +93,37 @@ class Core(object):
         self.memory()
         self.write_back()
 
+        self.clock_tick()
+
         if self.__pcb.quantum > 0:
             self.__pcb.quantum -= 1
 
-        return
+
+    def clock_tick(self):
+        # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
+        logging.debug('%s waiting for clock sync', self.name)
+        self.__global_vars.clock_barrier.wait()
+        self.clock += 1
+        #time.sleep(1)
 
     def __str__(self):
-        reg_str = '[ '
+
+        reg_str = '[\n '
+
         for i in range(len(self.__pcb.registers)):
             reg = self.__pcb.registers[i]
-            reg_str += '[{dir:d}: {data:d}]'.format(dir=reg.address, data=reg.data)
+            reg_str += '[r{dir:02d}: {data:d}]'.format(dir=reg.address, data=reg.data)
+
             if i < len(self.__pcb.registers) - 1:
                 reg_str += ','
-            reg_str += ' '
+
+            if (i+1)%8 == 0:
+                reg_str +='\n '
+            else:
+                reg_str += ' '
+
         reg_str += ']'
-        format_str = '{name:s}:\n\nPC: {pc:d}, LR: {lr:d}\nRegs: {regs:s}'
-        return format_str.format(name=self.name, pc=self.__pcb.pc.data, lr=self.__lr.data, regs=reg_str)
+        format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}'
+        return format_str.format(name=self.name, pc=self.__pcb.pc.data, lr=self.__lr.data, clock=self.clock,
+                                 regs=reg_str)
 
