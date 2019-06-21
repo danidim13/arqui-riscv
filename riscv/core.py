@@ -52,7 +52,7 @@ class Pcb(object):
 class Core(object):
     r"""Clase que modela el núcleo"""
     __lr: Register
-    __lr_lock: threading.Lock
+    __lr_lock: threading.RLock
     __pcb: Optional[Pcb]
     __global_vars: GlobalVars
 
@@ -65,7 +65,7 @@ class Core(object):
         self.__pcb = Pcb()
 
         self.__lr = Register(LR_ADDRESS, 'LR')
-        self.__lr_lock = threading.Lock()
+        self.__lr_lock = threading.RLock()
 
         self.data_cache = None
         self.inst_cache = None
