@@ -49,7 +49,7 @@ class Pcb(object):
     ticks: int
     status: str
 
-    def __init__(self, pid: int, name: str):
+    def __init__(self, pid: int = 0, name: str = 'default'):
         self.pid = pid
         self.name = name
         self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]

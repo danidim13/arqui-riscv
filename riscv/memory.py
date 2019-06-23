@@ -124,6 +124,8 @@ class CacheMemAssoc(object):
         :return:        La palabra solicitada
         """
         assert self.__start_addr <= addr < self.__end_addr
+        if addr % self.bpp != 0:
+            logging.warning('LOAD no alineado @{:d} !'.format(addr))
 
         block_num, offset, index, tag = self._process_address(addr)
 
@@ -188,6 +190,8 @@ class CacheMemAssoc(object):
 
     def store(self, addr: int, val: int):
         assert self.__start_addr <= addr < self.__end_addr
+        if addr % self.bpp != 0:
+            logging.warning('STORE no alineado @{:d} !'.format(addr))
 
         block_num, offset, index, tag = self._process_address(addr)
 

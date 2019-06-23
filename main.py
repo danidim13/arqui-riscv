@@ -19,10 +19,10 @@ def run_cpu(cpu: core.Core, other: core.Core):
         logging.debug('Got word {:d} @{:d}'.format(w, addr))
         cpu.clock_tick()
 
-    logging.info('Simulando store en B0')
     #cpu.inst_cache.sets[0].lines[0].flag = memory.FM
     #cpu.inst_cache.sets[0].lines[0].data[0] = 200
-    cpu.inst_cache.store(0, 200)
+    cpu.inst_cache.store(1, 200)
+    logging.info('Stored 200 @{:d}'.format(0))
 
     w = cpu.inst_cache.load(128)
     logging.debug('Got word {:d} @{:d}'.format(w, 128))
