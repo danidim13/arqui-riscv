@@ -96,6 +96,7 @@ class CacheMemAssoc(object):
 
         self.owner_core: Core = None
         self.bus: Bus = None
+        self._alien_core = None
 
     def __str__(self):
 
@@ -186,23 +187,10 @@ class CacheMemAssoc(object):
         # TODO
         pass
 
-    def snoop_find(self, addr: int, new_flag: int, caller: object) -> Optional[CacheBlock]:
+    def snoop_find(self, addr: int) -> Optional[CacheBlock]:
         block_num, offset, index, tag = self._process_address(addr)
-
-        self._acquire_local(caller.owner_core)
-
         target_block = self._find(index, tag)
-        dirty = False
-
-        if target_block:
-            if target_block.flag == FM:
-                dirty = True
-
-            target_block.old_flag = target_block.flag
-            target_block.flag = new_flag
-
-        self._release_local()
-        return target_block, dirty
+        return target_block
 
     def _process_address(self, addr: int):
         """
@@ -289,6 +277,11 @@ class CacheMemAssoc(object):
 
         return
 
+    def acquire_external(self, requester: Core):
+        assert requester is not self.owner_core
+        self._acquire_local(waiting_core=requester)
+        self._alien_core = requester
+
     def _acquire_with_bus(self, waiting_core: Core = None):
 
         if waiting_core is None:
@@ -317,6 +310,12 @@ class CacheMemAssoc(object):
         logging.debug('Releasing cache lock')
         self.lock.release()
         return
+
+    def release_external(self, requester: Core):
+        assert requester is not self.owner_core
+        assert requester is self._alien_core
+        self._alien_core = None
+        self._release_local()
 
     def _release_with_bus(self):
         logging.debug('Releasing bus and cache lock')
@@ -411,36 +410,36 @@ class Bus(object):
         #logging.debug('Generating random shared block: {:s}'.format(str(block)))
 
         block = None
-        cache_block = None
-        dirty = False
 
         for cache in self.__caches:
+
             if cache is requester:
                 logging.debug('Skipping calling cache')
                 continue
 
-            cache_block, dirty = cache.snoop_find(addr, FC, requester)
+            cache.acquire_external(requester.owner_core)
+            cache_block = cache.snoop_find(addr)
+
             if cache_block:
                 logging.debug('Snoop hit @{:d} en caché {:s}'.format(addr, cache.name))
+
+                if cache_block.flag == FM:
+                    logging.debug('Snooped dirty block')
+                    self.__memory.set(addr, cache_block)
+                    cache_block.flag = FC
+
+                aligned_addr = cache_block.tag * (cache_block.bpp * cache_block.palabras)
+                block = RamBlock(address=aligned_addr, palabras=cache_block.palabras, bpp=cache_block.bpp)
+                block.data[:] = cache_block.data[:]
+                cache.release_external(requester.owner_core)
                 break
 
-        if cache_block:
-
-            if dirty:
-                assert cache_block.old_flag == FM
-                self.__memory.set(addr, cache_block)
-
             else:
-                assert cache_block.old_flag == FC
+                cache.release_external(requester.owner_core)
 
-            assert cache_block.flag == FC
+        if block is None:
 
-            aligned_addr = cache_block.tag * (cache_block.bpp * cache_block.palabras)
-            block = RamBlock(address=aligned_addr, ppb=cache_block.palabras, bpp=cache_block.bpp)
-            block.data[:] = cache_block.data[:]
-
-        else:
-            logging.debug('Snoop miss @{:d} defaulting to memory'.format(addr, cache.name))
+            logging.debug('Snoop miss @{:d} defaulting to memory'.format(addr))
             block = self.__memory.get(addr)
 
         return block

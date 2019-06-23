@@ -6,7 +6,7 @@ import time
 from riscv import core, util, memory
 
 
-def run_cpu(cpu: core.Core):
+def run_cpu(cpu: core.Core, other: core.Core):
 
     logging.info('Starting thread %s', threading.current_thread().getName())
     logging.info(str(cpu))
@@ -23,17 +23,24 @@ def run_cpu(cpu: core.Core):
     cpu.inst_cache.sets[0].lines[0].flag = memory.FM
     cpu.inst_cache.sets[0].lines[0].data[0] = 200
 
-    logging.info(str(cpu))
-    logging.info(str(cpu.inst_cache))
-
     w = cpu.inst_cache.load(128)
     logging.debug('Got word {:d} @{:d}'.format(w, 128))
     cpu.clock_tick()
 
+    logging.info(str(cpu))
+    logging.info(str(cpu.inst_cache))
+
+
+    w = other.inst_cache.load(0)
+    logging.debug('Got word {:d} @{:d}'.format(w, 0))
+    cpu.clock_tick()
 
     logging.info('Thread ending %s', threading.current_thread().getName())
     logging.info(str(cpu))
     logging.info(str(cpu.inst_cache))
+
+    logging.info(str(other))
+    logging.info(str(other.inst_cache))
 
 def main():
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
@@ -52,8 +59,8 @@ def main():
     core0.inst_cache = cache_ins0
     cache_ins0.owner_core = core0
 
-    #core1.inst_cache = cache_ins1
-    #cache_ins1.owner_core = core1
+    core1.inst_cache = cache_ins1
+    cache_ins1.owner_core = core1
 
     mem_ins = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=1024, num_blocks=64, bpp=4, ppb=4)
 
@@ -66,7 +73,7 @@ def main():
 
 
     # Spawn child Threads
-    t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, ))
+    t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, core1))
     #t_cpu1 = threading.Thread(target=run_cpu, name='CPU1', args=(core1, ))
 
     t_cpu0.start()
