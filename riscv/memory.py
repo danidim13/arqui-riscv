@@ -1,6 +1,8 @@
 from __future__ import division
 
 import threading
+import logging
+import random
 from typing import List
 from .core import Core
 
@@ -8,7 +10,7 @@ FI = 0
 FC = 1
 FM = 2
 
-CACHE_MISS_PENALTY = 100
+BUS_DOWNTIME = 2
 MEMORY_LOAD_PENALTY = 32
 
 
@@ -92,8 +94,8 @@ class CacheMemAssoc(object):
 
         self.lock = threading.RLock()
 
-        self.main_memory: RamMemory = None
         self.owner_core: Core = None
+        self.bus: Bus = None
 
     def __str__(self):
 
@@ -111,31 +113,64 @@ class CacheMemAssoc(object):
 
         assert self.__start_addr <= addr < self.__end_addr
 
-        block_num, offset, index = self._process_address(addr)
+        block_num, offset, index, tag = self._process_address(addr)
 
-        self.lock.acquire()
-        target_block = self._find(index, block_num)
+        op_finished = False
+        op_local = True
+        word = None
 
-        if target_block is None:
-            # Miss
-            self.lock.release()
+        while not op_finished:
 
-            self._wait_penalty(MEMORY_LOAD_PENALTY)
+            # Sin acceso a bus
+            if op_local:
 
-            self.main_memory.lock.acquire()
-            self.lock.acquire()
+                self._acquire_local()
+                target_block = self._find(index, tag)
 
-            target_block = self._fetch(addr)
+                # HIT
+                if target_block is not None:
+                    logging.debug('Read Hit para {:d}, en [set: {:d}, block: {:d}, tag: {:d}] '.format(addr, index, target_block.address, tag))
+                    word = target_block.data[offset]
+                    op_finished = True
 
-            word = target_block.data[offset]
+                # MISS
+                else:
+                    logging.debug('Read Miss para {:d}, en [set: {:d}, tag: {:d}] '.format(addr, index, tag))
+                    op_local = False
 
-            self.lock.release()
-            self.main_memory.lock.release()
+                self._release_local()
 
-        else:
-            # Hit
-            word = target_block.data[offset]
-            self.lock.release()
+            # Acceso a bus
+            else:
+
+                self._wait_penalty(1)
+                self._acquire_with_bus()
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    word = target_block.data[offset]
+
+                # MISS
+                else:
+
+                    victim_b = self._find_victim(index)
+
+                    mem_b = self.bus.snoop_shared(addr, self)
+                    self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    # Sustituir los datos del bloque
+                    victim_b.data[:] = mem_b.data[:]
+                    victim_b.flag = FC
+                    victim_b.tag = block_num
+                    assert len(victim_b.data) == victim_b.palabras
+
+                    word = victim_b.data[offset]
+
+                self._release_with_bus()
+                op_finished = True
+
+                self._wait_penalty(BUS_DOWNTIME)
 
         return word
 
@@ -156,15 +191,17 @@ class CacheMemAssoc(object):
         Procesa una dirección de memoria para obtener el número de bloque, index en el caché y offset de palabra.
 
         :param addr:    Dirección de memoria
-        :return:        block, offset, index
+        :return:        block, offset, index, tag
         """
         block = addr // (self.ppb * self.bpp)
         offset = (addr % (self.ppb * self.bpp)) // self.bpp
         index = block % self.num_sets
-        assert ((block - self.__start_addr) % self.num_sets) == index
+        assert ((block - self.__start_addr // (self.ppb*self.bpp)) % self.num_sets) == index
         # tag = block // self.num_sets
+        tag = block
 
-        return block, offset, index
+        logging.debug('accediendo a dir {:d}, blocknum={:d}, index={:d}, word_off={:d}, tag={:d}'.format(addr, block, index, offset, tag))
+        return block, offset, index, tag
 
     def _find(self, index: int, tag: int):
         """
@@ -182,15 +219,12 @@ class CacheMemAssoc(object):
 
         return target
 
-    def _fetch(self, addr: int):
+    def _find_victim(self, index: int):
         """
-        Obtiene un bloque desde memoria principal y lo guarda en caché. Se encarga de seleccionar el bloque víctima
-        y hacer write back de ser necesario
-
-        :param addr:    Dirección del dato requerido
-        :return:        Bloque de memoria donde se encutra addr
+        Se encarga de seleccionar el bloque víctima y hacer write back (evict) de ser necesario.
+        :param index:   Index del set donde se va a seleccionar la vítima
+        :return:        Bloque de caché seleccionado ya evacuado
         """
-        block_num, offset, index = self._process_address(addr)
 
         victim_i = self.sets[index].fifo
         victim_b = self.sets[index].lines[victim_i]
@@ -200,20 +234,11 @@ class CacheMemAssoc(object):
             # victim_b_num = victim_b.tag + index
             victim_b_num = victim_b.tag
             victim_addr = victim_b_num * self.ppb * self.bpp
-            self.main_memory.set(victim_addr, victim_b)
-            victim_b.flag = FI
+            self.bus.write_back(victim_addr, victim_b, self)
+            self._wait_penalty(MEMORY_LOAD_PENALTY)
 
-        # TODO: definir si snooping sucede en get o hay que hacerlo aparte
-        # mem_b = self.main_memory.snoop_read(victim_addr)
-        mem_b = self.main_memory.get(addr)
-
-        # Sustituir los datos del bloque
-        victim_b.data[:] = mem_b.data[:]
-        victim_b.tag = block_num
-        victim_b.flag = FC
-        assert len(victim_b.data) == victim_b.palabras
-
-        self.sets[index].fifo = (self.sets[index].fifo + 1) % self.assoc
+        self.sets[index].fifo = (victim_i + 1) % self.assoc
+        victim_b.flag = FI
         return victim_b
 
     def _wait_penalty(self, clock_cycles: int, waiting_core: Core = None):
@@ -229,6 +254,58 @@ class CacheMemAssoc(object):
         for i in range(clock_cycles):
             waiting_core.clock_tick()
 
+    def _acquire_local(self, waiting_core: Core = None):
+
+        if waiting_core is None:
+            waiting_core = self.owner_core
+
+        while True:
+
+            got_lock = self.lock.acquire(False)
+
+            if got_lock:
+                logging.debug('Got cache lock')
+                break
+
+            waiting_core.clock_tick()
+
+        return
+
+    def _acquire_with_bus(self, waiting_core: Core = None):
+
+        if waiting_core is None:
+            waiting_core = self.owner_core
+
+        while True:
+
+            bus_locked = self.bus.lock.acquire(False)
+
+            if bus_locked:
+                logging.debug('Got bus lock')
+                cache_locked = self.lock.acquire(False)
+
+                if cache_locked:
+                    logging.debug('Got cache lock')
+                    break
+
+                logging.debug('Giving up bus lock')
+                self.bus.lock.release()
+
+            waiting_core.clock_tick()
+
+        return
+
+    def _release_local(self):
+        logging.debug('Releasing cache lock')
+        self.lock.release()
+        return
+
+    def _release_with_bus(self):
+        logging.debug('Releasing bus and cache lock')
+        self.lock.release()
+        self.bus.lock.release()
+        return
+
 
 class RamBlock(object):
 
@@ -239,6 +316,9 @@ class RamBlock(object):
         self.palabras = palabras
         self.bpp = bpp
         self.data = [1 for i in range(palabras)]
+
+    def __str__(self):
+        return 'B{:d}, data: {:s}'.format(self.address, str(self.data))
 
 
 class RamMemory(object):
@@ -275,10 +355,6 @@ class RamMemory(object):
 
         self.blocks = [RamBlock(i*ppb*bpp + start_addr, ppb, bpp) for i in range(num_blocks)]
 
-        self.bus = []
-
-        self.lock = threading.RLock()
-
     def get(self, addr: int) -> RamBlock:
         # TODO
         pass
@@ -287,7 +363,41 @@ class RamMemory(object):
         # TODO
         pass
 
-    def snoop_read(self, addr: int, requester: CacheMemAssoc):
-        # TODO
-        pass
 
+class Bus(object):
+
+    def __init__(self, name: str, memory: RamMemory, caches: List[CacheMemAssoc]):
+
+        self.name = name
+        self.__memory = memory
+        self.__caches = caches
+        self.lock = threading.RLock()
+
+        for cache in caches:
+            cache.bus = self
+
+    def snoop_shared(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
+        # TODO
+        block = RamBlock(-4, 4, 4)
+        block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
+        logging.debug('Generating random shared block: {:s}'.format(str(block)))
+
+        return block
+
+    def snoop_exclusive(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
+        # TODO
+        block = RamBlock(-4, 4, 4)
+        block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
+        logging.debug('Generating random exclusive block: {:s}'.format(str(block)))
+
+        return block
+
+    def write_back(self, addr: int, block: CacheBlock, requester: CacheMemAssoc):
+        # TODO
+        logging.debug('Write back requested by for address {:d}, block: [{:s}]'.format(addr, str(block), hex(id(requester))))
+        return
+
+    def __str__(self):
+        caches_dirs = [hex(id(cache)) for cache in self.__caches]
+        format_str = '{:s}: [Memoria: {:s}, Cachés: {:s}]'.format(self.name, hex(id(self.__memory)), str(caches_dirs))
+        return format_str
