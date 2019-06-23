@@ -3,7 +3,7 @@ from __future__ import division
 import threading
 import logging
 import random
-from typing import List
+from typing import List, Optional
 from .core import Core
 
 FI = 0
@@ -186,6 +186,24 @@ class CacheMemAssoc(object):
         # TODO
         pass
 
+    def snoop_find(self, addr: int, new_flag: int, caller: object) -> Optional[CacheBlock]:
+        block_num, offset, index, tag = self._process_address(addr)
+
+        self._acquire_local(caller.owner_core)
+
+        target_block = self._find(index, tag)
+        dirty = False
+
+        if target_block:
+            if target_block.flag == FM:
+                dirty = True
+
+            target_block.old_flag = target_block.flag
+            target_block.flag = new_flag
+
+        self._release_local()
+        return target_block, dirty
+
     def _process_address(self, addr: int):
         """
         Procesa una dirección de memoria para obtener el número de bloque, index en el caché y offset de palabra.
@@ -318,20 +336,12 @@ class RamBlock(object):
         self.data = [1 for i in range(palabras)]
 
     def __str__(self):
-        return 'B{:d}, data: {:s}'.format(self.address, str(self.data))
+        return 'B{:02d}, data: {:s}'.format(self.address//(self.bpp*self.palabras), str(self.data))
 
 
 class RamMemory(object):
 
-    name: str
-    __start_addr: int
-    __end_addr: int
-    num_blocks: int
-    bpp: int
-    ppb: int
     blocks: List[RamBlock]
-    bus: List[CacheMemAssoc]
-    lock: threading.RLock
 
     def __init__(self, name: str, start_addr: int, end_addr: int, num_blocks: int, bpp: int, ppb: int):
         """
@@ -356,12 +366,30 @@ class RamMemory(object):
         self.blocks = [RamBlock(i*ppb*bpp + start_addr, ppb, bpp) for i in range(num_blocks)]
 
     def get(self, addr: int) -> RamBlock:
-        # TODO
-        pass
+        return self._find(addr)
 
-    def set(self, addr: int, block: CacheBlock):
-        # TODO
-        pass
+    def set(self, addr: int, cache_block: CacheBlock):
+        assert self.ppb == len(cache_block.data)
+        assert self.bpp == cache_block.bpp
+        block = self._find(addr)
+        block.data[:] = cache_block.data[:]
+        return
+
+    def _find(self, addr: int):
+        assert self.__start_addr <= addr < self.__end_addr
+
+        block_num = (addr - self.__start_addr) // (self.ppb * self.bpp)
+        block = self.blocks[block_num]
+        assert block.address <= addr < block.address + self.bpp * self.ppb
+        return block
+
+    def __str__(self):
+
+        format_str = '{:s} :\n[\n'.format(self.name)
+        for block in self.blocks:
+            format_str += ' 0x{:04X}: [{:s}]\n'.format(block.address, str(block))
+
+        return format_str + ']\n'
 
 
 class Bus(object):
@@ -378,9 +406,42 @@ class Bus(object):
 
     def snoop_shared(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
         # TODO
-        block = RamBlock(-4, 4, 4)
-        block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
-        logging.debug('Generating random shared block: {:s}'.format(str(block)))
+        #block = RamBlock(-4, 4, 4)
+        #block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
+        #logging.debug('Generating random shared block: {:s}'.format(str(block)))
+
+        block = None
+        cache_block = None
+        dirty = False
+
+        for cache in self.__caches:
+            if cache is requester:
+                logging.debug('Skipping calling cache')
+                continue
+
+            cache_block, dirty = cache.snoop_find(addr, FC, requester)
+            if cache_block:
+                logging.debug('Snoop hit @{:d} en caché {:s}'.format(addr, cache.name))
+                break
+
+        if cache_block:
+
+            if dirty:
+                assert cache_block.old_flag == FM
+                self.__memory.set(addr, cache_block)
+
+            else:
+                assert cache_block.old_flag == FC
+
+            assert cache_block.flag == FC
+
+            aligned_addr = cache_block.tag * (cache_block.bpp * cache_block.palabras)
+            block = RamBlock(address=aligned_addr, ppb=cache_block.palabras, bpp=cache_block.bpp)
+            block.data[:] = cache_block.data[:]
+
+        else:
+            logging.debug('Snoop miss @{:d} defaulting to memory'.format(addr, cache.name))
+            block = self.__memory.get(addr)
 
         return block
 
@@ -395,6 +456,7 @@ class Bus(object):
     def write_back(self, addr: int, block: CacheBlock, requester: CacheMemAssoc):
         # TODO
         logging.debug('Write back requested by for address {:d}, block: [{:s}]'.format(addr, str(block), hex(id(requester))))
+        self.__memory.set(addr, block)
         return
 
     def __str__(self):

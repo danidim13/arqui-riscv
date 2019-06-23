@@ -44,7 +44,7 @@ def main():
     global_vars = util.GlobalVars(1)
 
     core0 = core.Core('CPU0', global_vars)
-    cache_ins0 = memory.CacheMemAssoc('$_Ins0', 0, 1024, 1, 8, 4, 4)
+    cache_ins0 = memory.CacheMemAssoc('$_Ins0', 0, 1024, 4, 8, 4, 4)
 
     core1 = core.Core('CPU1', global_vars)
     cache_ins1 = memory.CacheMemAssoc('$_Ins1', 0, 1024, 4, 8, 4, 4)
@@ -52,8 +52,8 @@ def main():
     core0.inst_cache = cache_ins0
     cache_ins0.owner_core = core0
 
-    core1.inst_cache = cache_ins1
-    cache_ins1.owner_core = core1
+    #core1.inst_cache = cache_ins1
+    #cache_ins1.owner_core = core1
 
     mem_ins = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=1024, num_blocks=64, bpp=4, ppb=4)
 
@@ -79,6 +79,7 @@ def main():
     #t_cpu1.join()
 
     time.sleep(1)
+    logging.info(str(mem_ins))
 
 
 if __name__ == '__main__':
