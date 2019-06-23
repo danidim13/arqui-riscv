@@ -39,14 +39,26 @@ class Register(object):
 
 
 class Pcb(object):
+    pid: int
+    name: str
     registers: List[Register]
     pc: Register
     quantum: int
+    hits: int
+    misses: int
+    ticks: int
+    status: str
 
-    def __init__(self):
+    def __init__(self, pid: int, name: str):
+        self.pid = pid
+        self.name = name
         self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
         self.pc = Register(PC_ADDRESS, 'PC')
         self.quantum = 0
+        self.hits = 0
+        self.misses = 0
+        self.ticks = 0
+        self.status = 0
 
 
 class Core(object):
