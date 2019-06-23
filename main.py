@@ -20,8 +20,9 @@ def run_cpu(cpu: core.Core, other: core.Core):
         cpu.clock_tick()
 
     logging.info('Simulando store en B0')
-    cpu.inst_cache.sets[0].lines[0].flag = memory.FM
-    cpu.inst_cache.sets[0].lines[0].data[0] = 200
+    #cpu.inst_cache.sets[0].lines[0].flag = memory.FM
+    #cpu.inst_cache.sets[0].lines[0].data[0] = 200
+    cpu.inst_cache.store(0, 200)
 
     w = cpu.inst_cache.load(128)
     logging.debug('Got word {:d} @{:d}'.format(w, 128))
@@ -31,8 +32,10 @@ def run_cpu(cpu: core.Core, other: core.Core):
     logging.info(str(cpu.inst_cache))
 
 
-    w = other.inst_cache.load(0)
-    logging.debug('Got word {:d} @{:d}'.format(w, 0))
+    w = other.inst_cache.load(4)
+    logging.debug('Got word {:d} @{:d}'.format(w, 4))
+    other.inst_cache.store(4, 300)
+    logging.debug('Stored word {:d} @{:d}'.format(300, 4))
     cpu.clock_tick()
 
     logging.info('Thread ending %s', threading.current_thread().getName())

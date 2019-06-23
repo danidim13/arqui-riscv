@@ -187,8 +187,88 @@ class CacheMemAssoc(object):
         return word
 
     def store(self, addr: int, val: int):
-        # TODO
-        pass
+        assert self.__start_addr <= addr < self.__end_addr
+
+        block_num, offset, index, tag = self._process_address(addr)
+
+        op_finished = False
+        op_local = True
+        word = None
+
+        while not op_finished:
+
+            # Sin acceso a bus
+            if op_local:
+
+                self._acquire_local()
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    logging.debug('Write Hit para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                    if target_block.flag == FM:
+                        target_block.data[offset] = val
+                        op_finished = True
+
+                    else:
+                        logging.debug('Bloque compartido, se debe invalidar con snooping')
+                        op_local = False
+
+                # MISS
+                else:
+                    logging.debug('Write Miss para {:d}, en [set: {:d}, tag: {:d}]'.format(addr, index, tag))
+                    op_local = False
+
+                self._release_local()
+
+            # Acceso a bus
+            else:
+
+                self._wait_penalty(1)
+                self._acquire_with_bus()
+
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    word = target_block.data[offset]
+                    logging.debug('Write Hit con bus para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                    if target_block.flag == FM:
+                        logging.warning('Camino inesperado en Store para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                    else:
+                        assert target_block.flag == FC
+                        logging.debug('Bloque compartido, invalidando por medio de snooping')
+                        mem_b = self.bus.snoop_exclusive(addr, self)
+                        self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    target_block.data[offset] = val
+                    target_block.flag = FM
+
+                # MISS
+                else:
+
+                    victim_b = self._find_victim(index)
+
+                    mem_b = self.bus.snoop_exclusive(addr, self)
+                    self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    # Sustituir los datos del bloque
+                    victim_b.data[:] = mem_b.data[:]
+                    victim_b.flag = FM
+                    victim_b.tag = block_num
+                    assert len(victim_b.data) == victim_b.palabras
+
+                    victim_b.data[offset] = val
+
+                self._release_with_bus()
+                op_finished = True
+
+                self._wait_penalty(BUS_DOWNTIME)
+
+        return
 
     def load_reserved(self, addr: int):
         # TODOCacheBlock
@@ -230,7 +310,6 @@ class CacheMemAssoc(object):
         assert requester is self._alien_core
         self._alien_core = None
         self._release_local()
-
 
     def _process_address(self, addr: int):
         """
@@ -421,7 +500,7 @@ class RamMemory(object):
 
 
 class Bus(object):
-    """Clase que modela un bus compartido por varias cachés y una memoria principal"""
+    """Clase que modela un bus compartido que conecta varias cachés a una memoria principal"""
 
     def __init__(self, name: str, memory: RamMemory, caches: List[CacheMemAssoc]):
 
@@ -434,10 +513,7 @@ class Bus(object):
             cache.bus = self
 
     def snoop_shared(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
-        # TODO
-        #block = RamBlock(-4, 4, 4)
-        #block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
-        #logging.debug('Generating random shared block: {:s}'.format(str(block)))
+        assert requester in self.__caches
 
         block = None
 
@@ -475,15 +551,50 @@ class Bus(object):
         return block
 
     def snoop_exclusive(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
-        # TODO
-        block = RamBlock(-4, 4, 4)
-        block.data[:] = [random.randint(0, 9) for _ in range(len(block.data))]
-        logging.debug('Generating random exclusive block: {:s}'.format(str(block)))
+        assert requester in self.__caches
+
+        block = None
+
+        for cache in self.__caches:
+
+            if cache is requester:
+                logging.debug('Skipping calling cache')
+                continue
+
+            cache.acquire_external(requester.owner_core)
+            cache_block = cache.snoop_find(addr)
+
+            if cache_block:
+                # Hit
+                logging.debug('Snoop Exclusive hit @{:d} en caché {:s}'.format(addr, cache.name))
+
+                if cache_block.flag == FM:
+                    logging.debug('Snooped dirty block, invalidating')
+                    self.__memory.set(addr, cache_block)
+                    cache_block.flag = FI
+                    aligned_addr = cache_block.tag * (cache_block.bpp * cache_block.palabras)
+                    block = RamBlock(address=aligned_addr, palabras=cache_block.palabras, bpp=cache_block.bpp)
+                    block.data[:] = cache_block.data[:]
+                    cache.release_external(requester.owner_core)
+                    break
+
+                else:
+                    logging.debug('Snooped shared block, invalidating')
+                    assert cache_block.flag == FC
+                    cache_block.flag = FI
+
+            else:
+                # Miss
+                cache.release_external(requester.owner_core)
+
+        if block is None:
+
+            logging.debug('Snoop Exclusive miss @{:d} defaulting to memory'.format(addr))
+            block = self.__memory.get(addr)
 
         return block
 
     def write_back(self, addr: int, block: CacheBlock, requester: CacheMemAssoc):
-        # TODO
         logging.debug('Write back requested by for address {:d}, block: [{:s}]'.format(addr, str(block), hex(id(requester))))
         self.__memory.set(addr, block)
         return
