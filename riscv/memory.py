@@ -7,8 +7,13 @@ from typing import List, Optional
 from .core import Core
 
 FI = 0
+"""Bandera de inválido en caché"""
+
 FC = 1
+"""Bandera de compartido en caché"""
+
 FM = 2
+"""Bandera de modificado en caché"""
 
 BUS_DOWNTIME = 2
 MEMORY_LOAD_PENALTY = 32
@@ -43,7 +48,7 @@ class CacheBlock(object):
         elif self.flag == FM:
             flag = 'M'
         else:
-            flag = 'E'
+            flag = 'X'
 
         return 'B{:d}, tag: {:d}, flag: {:s}, data: {:s}'.format(self.address, self.tag, flag, str(self.data))
 
@@ -60,7 +65,7 @@ class CacheSet(object):
 
 
 class CacheMemAssoc(object):
-    """ Clase que modela una memoria cache asociativa """
+    """Clase que modela una memoria caché asociativa"""
 
     def __init__(self, name: str, start_addr: int, end_addr: int, assoc: int, num_blocks: int, bpp: int, ppb: int):
         """
@@ -110,8 +115,14 @@ class CacheMemAssoc(object):
 
         return format_str + ']\n'
 
-    def load(self, addr: int):
+    def load(self, addr: int) -> int:
+        """
+        Carga la palabra de una dirección de memoria. Utiliza el protocolo MSI, en caso de miss accede a bus.
+        Si la dirección solicitada no mappea al caché levanta una excepción.
 
+        :param addr:    Dirección de memoria de la palabra solicitada
+        :return:        La palabra solicitada
+        """
         assert self.__start_addr <= addr < self.__end_addr
 
         block_num, offset, index, tag = self._process_address(addr)
@@ -187,10 +198,39 @@ class CacheMemAssoc(object):
         # TODO
         pass
 
+    def acquire_external(self, requester: Core):
+        """
+        Intenta bloquear la caché para uso externo (a través del bus)
+
+        :type requester: El procesador que está ejecutando la operación
+        """
+        assert requester is not self.owner_core
+        self._acquire_local(waiting_core=requester)
+        self._alien_core = requester
+
     def snoop_find(self, addr: int) -> Optional[CacheBlock]:
+        """
+        Busca si una dirección se encuentra en el caché. Este método debe usarse en conjunto con ``acquire_external()``
+        y ``release_external()``.
+
+        :param addr:    La dirección que se busca
+        :return:        El bloque si está en caché, None en caso contrario
+        """
         block_num, offset, index, tag = self._process_address(addr)
         target_block = self._find(index, tag)
         return target_block
+
+    def release_external(self, requester: Core):
+        """
+        Libera la caché luego de un uso externo (a través del bus)
+
+        :type requester: El procesador que bloqueó la caché originalmente
+        """
+        assert requester is not self.owner_core
+        assert requester is self._alien_core
+        self._alien_core = None
+        self._release_local()
+
 
     def _process_address(self, addr: int):
         """
@@ -277,11 +317,6 @@ class CacheMemAssoc(object):
 
         return
 
-    def acquire_external(self, requester: Core):
-        assert requester is not self.owner_core
-        self._acquire_local(waiting_core=requester)
-        self._alien_core = requester
-
     def _acquire_with_bus(self, waiting_core: Core = None):
 
         if waiting_core is None:
@@ -310,12 +345,6 @@ class CacheMemAssoc(object):
         logging.debug('Releasing cache lock')
         self.lock.release()
         return
-
-    def release_external(self, requester: Core):
-        assert requester is not self.owner_core
-        assert requester is self._alien_core
-        self._alien_core = None
-        self._release_local()
 
     def _release_with_bus(self):
         logging.debug('Releasing bus and cache lock')
@@ -392,6 +421,7 @@ class RamMemory(object):
 
 
 class Bus(object):
+    """Clase que modela un bus compartido por varias cachés y una memoria principal"""
 
     def __init__(self, name: str, memory: RamMemory, caches: List[CacheMemAssoc]):
 
