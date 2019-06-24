@@ -37,7 +37,8 @@ class OpCodes(Enum):
     OP_JAL = 111
     OP_JALR = 103
 
-    OP_FIN = 0xFF
+    OP_FIN_HEX = 0xff
+    OP_FIN = 999
 
 
 def dec_opcode(instruction: int):
@@ -66,6 +67,8 @@ def dec_arg3(instruction: int):
 
 def decode(instruction: int):
     op = dec_opcode(instruction)
+    if op == OpCodes.OP_FIN_HEX.value:
+        op = OpCodes.OP_FIN.value
     arg1 = dec_arg1(instruction)
     arg2 = dec_arg2(instruction)
     arg3 = dec_arg3(instruction)
@@ -75,12 +78,16 @@ def decode(instruction: int):
 def encode(opcode: int, arg1: int, arg2: int, arg3: int):
 
     arg3_bits = INS_LENGTH - BS_ARG3
-    assert 0 <= opcode < 2**8
+    assert 0 <= opcode < 2**8 or opcode == 999
     assert 0 <= arg1 < 2**5
     assert 0 <= arg2 < 2**5
     assert -2**(arg3_bits-1) <= arg3 < 2**(arg3_bits-1)
 
     instruction = 0
+
+    if opcode == 999:
+        opcode = OpCodes.OP_FIN_HEX.value
+
     instruction |= (opcode & M_OPCD)
     instruction |= (arg1 << BS_ARG1) & M_ARG1
     instruction |= (arg2 << BS_ARG2) & M_ARG2

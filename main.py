@@ -3,7 +3,7 @@
 import threading
 import logging
 import time
-from riscv import core, util, memory
+from riscv import core, util, memory, hilo
 
 
 def run_cpu(cpu: core.Core, other: core.Core):
@@ -80,8 +80,9 @@ def mem_test():
     global_vars = util.GlobalVars(1)
     core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
 
-    datos = [0, 1, 2, 3, 4, 5, 6, -1]
-    mem_inst.load(4, datos)
+    datos = hilo.read_hilo('hilos/20.txt')
+
+    mem_inst.load(0, datos)
     logging.info(str(mem_inst))
 
 
