@@ -1,4 +1,4 @@
-
+from enum import Enum
 
 M_OPCD = 0x000000FF
 M_ARG1 = 0x00001F00
@@ -16,25 +16,28 @@ BS_ARG3 = 18
 INS_LENGTH = 32
 
 
-OP_ADDI = 19
+class OpCodes(Enum):
+    OP_NOOP = 0
+    OP_ADDI = 19
 
-OP_ADD = 71
-OP_SUB = 83
-OP_MUL = 72
-OP_DIV = 56
+    OP_ADD = 71
+    OP_SUB = 83
+    OP_MUL = 72
+    OP_DIV = 56
 
-OP_LW = 5
-OP_SW = 37
+    OP_LW = 5
+    OP_SW = 37
 
-OP_LR = 51
-OP_SC = 52
+    OP_LR = 51
+    OP_SC = 52
 
-OP_BEQ = 99
-OP_NEQ = 100
-OP_JAL = 111
-OP_JALR = 103
+    OP_BEQ = 99
+    OP_BNE = 100
 
-OP_FIN = 0xFF
+    OP_JAL = 111
+    OP_JALR = 103
+
+    OP_FIN = 0xFF
 
 
 def dec_opcode(instruction: int):

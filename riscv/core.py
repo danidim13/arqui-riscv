@@ -2,10 +2,16 @@ import threading
 import logging
 from typing import List, Optional
 from .util import GlobalVars
+from .isa import OpCodes, decode as isa_decode
 
 
 PC_ADDRESS = 32
 LR_ADDRESS = 33
+
+OP_ARITH_REG = (OpCodes.OP_ADD, OpCodes.OP_SUB, OpCodes.OP_MUL, OpCodes.OP_DIV)
+OP_LOAD_STORE = (OpCodes.OP_LW, OpCodes.OP_SW)
+OP_BRANCH = (OpCodes.OP_BEQ, OpCodes.OP_BNE)
+OP_ROUTINE = (OpCodes.JAL, OpCodes.OP_JALR)
 
 
 class Register(object):
@@ -73,8 +79,11 @@ class Core(object):
         self.name = name
         self.clock = 0
 
+        self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
+        self.pc = Register(PC_ADDRESS, 'PC')
+
         self.__global_vars = global_vars
-        self.__pcb = Pcb()
+        self.__pcb = None
 
         self.__lr = Register(LR_ADDRESS, 'LR')
         self.__lr_lock = threading.RLock()
@@ -83,33 +92,152 @@ class Core(object):
         self.inst_cache = None
 
     def fetch(self):
-        pass
 
-    def decode(self):
-        pass
+        ins = self.inst_cache.load(self.pc.data)
+        self.pc.data = self.pc.data+4
+        return ins
 
-    def execute(self):
-        pass
+    def decode(self, instruction: int):
+        op_code, arg1, arg2, arg3 = isa_decode(instruction)
 
-    def memory(self):
-        pass
+        rd = None
+        rf1 = None
+        rf2 = None
+        inm = None
 
-    def write_back(self):
-        pass
+        if op_code in OP_ARITH_REG:
+            rd = arg1
+            rf1 = arg2
+            rf2 = arg3
+
+        elif op_code in OP_BRANCH or op_code == OpCodes.OP_SW:
+            rf1 = arg1
+            rf2 = arg2
+            inm = arg3
+
+        elif op_code in OP_ROUTINE or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
+            rd = arg1
+            rf1 = arg2
+            inm = arg3
+
+        elif op_code == OpCodes.OP_LR:
+            rd = arg1
+            rf1 = arg2
+
+        elif op_code == OpCodes.OP_SC:
+            rf1 = arg1
+            rf2 = arg2
+
+        return op_code, rd, rf1, rf2, inm
+
+    def execute(self, op_code: int, rf1: int, rf2: int, inm: int):
+
+        # FIXME: xd y memd se pueden fusionar en una sola variable (alu_out)
+        xd = None
+        memd = None
+        jmp = None
+        jmp_target = None
+
+        if op_code in OP_ARITH_REG:
+            x2 = self.registers[rf1].data
+            x3 = self.registers[rf2].data
+            if op_code == OpCodes.OP_ADDI:
+                xd = x2 + x3
+            elif op_code == OpCodes.OP_SUB:
+                xd = x2 - x3
+            elif op_code == OpCodes.OP_MUL:
+                xd = x2 * x3
+            elif op_code == OpCodes.OP_DIV:
+                xd = x2 // x3
+            else:
+                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+
+        elif op_code == OpCodes.OP_ADDI:
+            x2 = self.registers[rf1].data
+            n = inm
+            xd = x2 + n
+
+        elif op_code in OP_LOAD_STORE:
+            x1 = self.registers[rf1].data
+            n = inm
+            memd = x1 + n
+
+        elif op_code in OP_BRANCH:
+            x1 = self.registers[rf1].data
+            x2 = self.registers[rf2].data
+            n = inm
+
+            if op_code == OpCodes.OP_BEQ:
+                jmp = x1 == x2
+            elif op_code == OpCodes.OP_BNE:
+                jmp = x1 != x2
+            else:
+                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+
+            jmp_target = self.pc.data + 4*n
+
+        elif op_code in OP_ROUTINE:
+            n = inm
+            jmp = True
+
+            if op_code == OpCodes.OP_JAL:
+                jmp_target = self.pc.data + n
+            elif op_code == OpCodes.OP_JALR:
+                x1 = self.registers[rf1]
+                jmp_target = x1 + n
+            else:
+                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+
+            xd = self.pc.data
+
+        return xd, memd, jmp, jmp_target
+
+    def memory(self, op_code: int, memd: int, rf2: int, xd: int):
+
+        if op_code == OpCodes.OP_LW:
+            xd = self.data_cache.load(memd)
+
+        elif op_code == OpCodes.OP_SW:
+            word = self.registers[rf2]
+            self.data_cache.store(memd, word)
+
+        elif op_code == OpCodes.OP_LR:
+            pass
+        elif op_code == OpCodes.OP_SC:
+            pass
+
+        return xd
+
+    def write_back(self, op_code, rd, xd, jmp, jmp_target):
+        if op_code in OP_ROUTINE or op_code in OP_BRANCH:
+            if jmp:
+                self.pc.data = jmp_target
+
+        if op_code in OP_ARITH_REG or op_code in OP_ROUTINE or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
+            self.registers[rd].data = xd
 
     def step(self):
 
-        self.fetch()
-        self.decode()
-        self.execute()
-        self.memory()
-        self.write_back()
+        if self.__pcb.quantum > 0:
+
+            ins = self.fetch()
+            op_code, rd, rf1, rf2, inm = self.decode(ins)
+
+
+            xd, memd, jmp, jmp_target = self.execute(op_code, rf1, rf2, inm)
+            xd = self.memory(op_code, memd, rf2, xd)
+            self.write_back(op_code, rd, xd, jmp, jmp_target)
+
+            if op_code == OpCodes.OP_FIN:
+                self.__pcb.quantum = 0
+            else:
+                self.__pcb.quantum -= 1
+
+        else:
+            # TODO: Context Switch
+            pass
 
         self.clock_tick()
-
-        if self.__pcb.quantum > 0:
-            self.__pcb.quantum -= 1
-
 
     def clock_tick(self):
         # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
