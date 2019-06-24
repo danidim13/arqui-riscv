@@ -486,6 +486,23 @@ class RamMemory(object):
         block.data[:] = cache_block.data[:]
         return
 
+    def load(self, addr: int, data: List[int]):
+        bn_i = (addr - self.__start_addr) // (self.ppb * self.bpp)
+        off_i = ((addr - self.__start_addr) % (self.ppb * self.bpp)) // self.bpp
+
+        logging.debug('Copying {:d} words into memory starting @ 0x{:04X}, [block {:d} offset {:d}]'.format(len(data), addr, bn_i, off_i))
+        for datum in data:
+
+            self.blocks[bn_i].data[off_i] = datum
+            off_i += 1
+
+            if off_i >= self.ppb:
+                off_i = 0
+                bn_i += 1
+
+        last_addr = self.__start_addr + bn_i*self.ppb*self.bpp + (off_i-1)*self.bpp
+        logging.debug('Finished copying last address @ 0x{:04X},  next = [block {:d} offset {:d}]'.format(last_addr, bn_i, off_i))
+
     def _find(self, addr: int):
         assert self.__start_addr <= addr < self.__end_addr
 

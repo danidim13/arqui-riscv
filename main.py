@@ -45,14 +45,8 @@ def run_cpu(cpu: core.Core, other: core.Core):
     logging.info(str(other))
     logging.info(str(other.inst_cache))
 
-def main():
-    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
 
-    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
-
-    # TODO: create data structures
-    global_vars = util.GlobalVars(1)
-
+def setup_modules(global_vars):
     mem_inst = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)
     mem_data = memory.RamMemory('Memoria de datos', start_addr=384, end_addr=1024, num_blocks=40, bpp=4, ppb=4)
     core0 = core.Core('CPU0', global_vars)
@@ -74,6 +68,32 @@ def main():
 
     bus_inst = memory.Bus('Bus de instucciones', memory=mem_inst, caches=[cache_inst0, cache_inst1])
     bus_data = memory.Bus('Bus de datos', memory=mem_data, caches=[cache_data0, cache_data1])
+
+    return core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data
+
+
+def mem_test():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
+
+    global_vars = util.GlobalVars(1)
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
+
+    datos = [0, 1, 2, 3, 4, 5, 6, -1]
+    mem_inst.load(4, datos)
+    logging.info(str(mem_inst))
+
+
+def main():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
+
+    # TODO: create data structures
+    global_vars = util.GlobalVars(1)
+
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
 
     # logging.info(str(cache_ins0))
 
@@ -99,4 +119,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    mem_test()

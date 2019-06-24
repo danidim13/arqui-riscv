@@ -3,6 +3,7 @@ import logging
 from typing import List, Optional
 from .util import GlobalVars
 from .isa import OpCodes, decode as isa_decode
+from .hilo import Pcb
 
 
 PC_ADDRESS = 32
@@ -42,29 +43,6 @@ class Register(object):
             raise Exception('Trying to set Zero Register value')
         else:
             self.__data = var
-
-
-class Pcb(object):
-    pid: int
-    name: str
-    registers: List[Register]
-    pc: Register
-    quantum: int
-    hits: int
-    misses: int
-    ticks: int
-    status: str
-
-    def __init__(self, pid: int = 0, name: str = 'default'):
-        self.pid = pid
-        self.name = name
-        self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
-        self.pc = Register(PC_ADDRESS, 'PC')
-        self.quantum = 0
-        self.hits = 0
-        self.misses = 0
-        self.ticks = 0
-        self.status = 0
 
 
 class Core(object):
