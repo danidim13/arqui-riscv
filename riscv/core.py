@@ -11,7 +11,7 @@ LR_ADDRESS = 33
 OP_ARITH_REG = (OpCodes.OP_ADD, OpCodes.OP_SUB, OpCodes.OP_MUL, OpCodes.OP_DIV)
 OP_LOAD_STORE = (OpCodes.OP_LW, OpCodes.OP_SW)
 OP_BRANCH = (OpCodes.OP_BEQ, OpCodes.OP_BNE)
-OP_ROUTINE = (OpCodes.JAL, OpCodes.OP_JALR)
+OP_ROUTINE = (OpCodes.OP_JAL, OpCodes.OP_JALR)
 
 
 class Register(object):
@@ -250,11 +250,11 @@ class Core(object):
 
         reg_str = '[\n '
 
-        for i in range(len(self.__pcb.registers)):
-            reg = self.__pcb.registers[i]
+        for i in range(len(self.registers)):
+            reg = self.registers[i]
             reg_str += '[r{dir:02d}: {data:d}]'.format(dir=reg.address, data=reg.data)
 
-            if i < len(self.__pcb.registers) - 1:
+            if i < len(self.registers) - 1:
                 reg_str += ','
 
             if (i+1)%8 == 0:
@@ -264,6 +264,6 @@ class Core(object):
 
         reg_str += ']'
         format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}\n'
-        return format_str.format(name=self.name, pc=self.__pcb.pc.data, lr=self.__lr.data, clock=self.clock,
+        return format_str.format(name=self.name, pc=self.pc.data, lr=self.__lr.data, clock=self.clock,
                                  regs=reg_str)
 

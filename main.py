@@ -53,26 +53,32 @@ def main():
     # TODO: create data structures
     global_vars = util.GlobalVars(1)
 
+    mem_inst = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)
+    mem_data = memory.RamMemory('Memoria de datos', start_addr=384, end_addr=1024, num_blocks=40, bpp=4, ppb=4)
     core0 = core.Core('CPU0', global_vars)
-    cache_ins0 = memory.CacheMemAssoc('$_Ins0', 0, 1024, 4, 8, 4, 4)
-
+    cache_inst0 = memory.CacheMemAssoc('Inst$0', start_addr=0, end_addr=384, assoc=1, num_blocks=8, bpp=4, ppb=4)
+    cache_data0 = memory.CacheMemAssoc('Data$0', start_addr=384, end_addr=1024, assoc=4, num_blocks=8, bpp=4, ppb=4)
     core1 = core.Core('CPU1', global_vars)
-    cache_ins1 = memory.CacheMemAssoc('$_Ins1', 0, 1024, 4, 8, 4, 4)
+    cache_inst1 = memory.CacheMemAssoc('Inst$1', start_addr=0, end_addr=384, assoc=1, num_blocks=8, bpp=4, ppb=4)
+    cache_data1 = memory.CacheMemAssoc('Data$1', start_addr=384, end_addr=1024, assoc=1, num_blocks=8, bpp=4, ppb=4)
 
-    core0.inst_cache = cache_ins0
-    cache_ins0.owner_core = core0
+    core0.inst_cache = cache_inst0
+    core0.data_cache = cache_data0
+    cache_inst0.owner_core = core0
+    cache_data0.owner_core = core0
 
-    core1.inst_cache = cache_ins1
-    cache_ins1.owner_core = core1
+    core1.inst_cache = cache_inst1
+    core1.data_cache = cache_data1
+    cache_inst1.owner_core = core1
+    cache_data1.owner_core = core1
 
-    mem_ins = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=1024, num_blocks=64, bpp=4, ppb=4)
-
-    bus_ins = memory.Bus('Bus de instucciones', memory=mem_ins, caches=[cache_ins0, cache_ins1])
+    bus_inst = memory.Bus('Bus de instucciones', memory=mem_inst, caches=[cache_inst0, cache_inst1])
+    bus_data = memory.Bus('Bus de datos', memory=mem_data, caches=[cache_data0, cache_data1])
 
     # logging.info(str(cache_ins0))
 
-    logging.info('Direcciones: [cpu0: {:s}, cpu1: {:s}, ins$0: {:s}, ins$1: {:s}, ins_mem: {:s}]'.format(hex(id(core0)), hex(id(core1)), hex(id(cache_ins0)), hex(id(cache_ins1)), hex(id(mem_ins))))
-    logging.info(str(bus_ins))
+    logging.info('Direcciones: [cpu0: {:s}, cpu1: {:s}, inst$0: {:s}, inst$1: {:s}, ins_mem: {:s}]'.format(hex(id(core0)), hex(id(core1)), hex(id(cache_inst0)), hex(id(cache_inst1)), hex(id(mem_inst))))
+    logging.info(str(bus_inst))
 
 
     # Spawn child Threads
@@ -89,7 +95,7 @@ def main():
     #t_cpu1.join()
 
     time.sleep(1)
-    logging.info(str(mem_ins))
+    logging.info(str(mem_inst))
 
 
 if __name__ == '__main__':
