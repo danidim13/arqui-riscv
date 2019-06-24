@@ -47,14 +47,14 @@ def run_cpu(cpu: core.Core, other: core.Core):
 
 
 def setup_modules(global_vars):
-    mem_inst = memory.RamMemory('Memoria de instrucciones', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)
-    mem_data = memory.RamMemory('Memoria de datos', start_addr=384, end_addr=1024, num_blocks=40, bpp=4, ppb=4)
+    mem_data = memory.RamMemory('Memoria de datos', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)
+    mem_inst = memory.RamMemory('Memoria de instrucciones', start_addr=384, end_addr=1024, num_blocks=40, bpp=4, ppb=4)
     core0 = core.Core('CPU0', global_vars)
-    cache_inst0 = memory.CacheMemAssoc('Inst$0', start_addr=0, end_addr=384, assoc=1, num_blocks=8, bpp=4, ppb=4)
-    cache_data0 = memory.CacheMemAssoc('Data$0', start_addr=384, end_addr=1024, assoc=4, num_blocks=8, bpp=4, ppb=4)
+    cache_inst0 = memory.CacheMemAssoc('Inst$0', start_addr=384, end_addr=1024, assoc=1, num_blocks=8, bpp=4, ppb=4)
+    cache_data0 = memory.CacheMemAssoc('Data$0', start_addr=0, end_addr=384, assoc=4, num_blocks=8, bpp=4, ppb=4)
     core1 = core.Core('CPU1', global_vars)
-    cache_inst1 = memory.CacheMemAssoc('Inst$1', start_addr=0, end_addr=384, assoc=1, num_blocks=8, bpp=4, ppb=4)
-    cache_data1 = memory.CacheMemAssoc('Data$1', start_addr=384, end_addr=1024, assoc=1, num_blocks=8, bpp=4, ppb=4)
+    cache_inst1 = memory.CacheMemAssoc('Inst$1', start_addr=384, end_addr=1024, assoc=1, num_blocks=8, bpp=4, ppb=4)
+    cache_data1 = memory.CacheMemAssoc('Data$1', start_addr=0, end_addr=384, assoc=1, num_blocks=8, bpp=4, ppb=4)
 
     core0.inst_cache = cache_inst0
     core0.data_cache = cache_data0
@@ -75,16 +75,25 @@ def setup_modules(global_vars):
 def mem_test():
 
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
-    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
+    logging.basicConfig(format=log_format, level=logging.INFO, datefmt="%H:%M:%S")
 
     global_vars = util.GlobalVars(1)
     core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
 
-    datos = hilo.read_hilo('hilos/20.txt')
+    datos = hilo.read_hilo('../hilos/20.txt')
 
-    mem_inst.load(0, datos)
+    mem_inst.load(384, datos)
+    core0.pc.data = 384
     logging.info(str(mem_inst))
 
+    logging.info('Iniciando simulación single Core')
+    logging.info(str(core0))
+
+    for i in range(17):
+        core0.step()
+
+    logging.info('Fin simulación single Core')
+    logging.info(str(core0))
 
 def main():
 

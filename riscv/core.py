@@ -77,16 +77,21 @@ class Core(object):
 
     def decode(self, instruction: int):
         op_code, arg1, arg2, arg3 = isa_decode(instruction)
+        op_code = OpCodes(op_code)
 
         rd = None
         rf1 = None
         rf2 = None
         inm = None
 
+
+        logging.info('Operación {:s}'.format(op_code.name))
+
         if op_code in OP_ARITH_REG:
             rd = arg1
             rf1 = arg2
             rf2 = arg3
+            logging.debug('Ejecutando -->  {:s} r{:02d}, r{:02d}, r{:02d}'.format(op_code.name, rd, rf1, rf2))
 
         elif op_code in OP_BRANCH or op_code == OpCodes.OP_SW:
             rf1 = arg1
@@ -108,7 +113,7 @@ class Core(object):
 
         return op_code, rd, rf1, rf2, inm
 
-    def execute(self, op_code: int, rf1: int, rf2: int, inm: int):
+    def execute(self, op_code: OpCodes, rf1: int, rf2: int, inm: int):
 
         # FIXME: xd y memd se pueden fusionar en una sola variable (alu_out)
         xd = None
@@ -119,7 +124,7 @@ class Core(object):
         if op_code in OP_ARITH_REG:
             x2 = self.registers[rf1].data
             x3 = self.registers[rf2].data
-            if op_code == OpCodes.OP_ADDI:
+            if op_code == OpCodes.OP_ADD:
                 xd = x2 + x3
             elif op_code == OpCodes.OP_SUB:
                 xd = x2 - x3
@@ -128,7 +133,7 @@ class Core(object):
             elif op_code == OpCodes.OP_DIV:
                 xd = x2 // x3
             else:
-                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+                logging.error('Unexpected OPCODE {:s} in exec '.format(op_code.name))
 
         elif op_code == OpCodes.OP_ADDI:
             x2 = self.registers[rf1].data
@@ -150,7 +155,7 @@ class Core(object):
             elif op_code == OpCodes.OP_BNE:
                 jmp = x1 != x2
             else:
-                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+                logging.error('Unexpected OPCODE {:s} in exec '.format(op_code.name))
 
             jmp_target = self.pc.data + 4*n
 
@@ -164,13 +169,13 @@ class Core(object):
                 x1 = self.registers[rf1]
                 jmp_target = x1 + n
             else:
-                logging.error('Unexpected OPCODE {:d} in exec '.format(op_code))
+                logging.error('Unexpected OPCODE {:s} in exec '.format(op_code.name))
 
             xd = self.pc.data
 
         return xd, memd, jmp, jmp_target
 
-    def memory(self, op_code: int, memd: int, rf2: int, xd: int):
+    def memory(self, op_code: OpCodes, memd: int, rf2: int, xd: int):
 
         if op_code == OpCodes.OP_LW:
             xd = self.data_cache.load(memd)
@@ -196,30 +201,28 @@ class Core(object):
 
     def step(self):
 
-        if self.__pcb.quantum > 0:
+        # if self.__pcb.quantum > 0:
 
-            ins = self.fetch()
-            op_code, rd, rf1, rf2, inm = self.decode(ins)
+        ins = self.fetch()
+        op_code, rd, rf1, rf2, inm = self.decode(ins)
+        xd, memd, jmp, jmp_target = self.execute(op_code, rf1, rf2, inm)
+        xd = self.memory(op_code, memd, rf2, xd)
+        self.write_back(op_code, rd, xd, jmp, jmp_target)
 
-
-            xd, memd, jmp, jmp_target = self.execute(op_code, rf1, rf2, inm)
-            xd = self.memory(op_code, memd, rf2, xd)
-            self.write_back(op_code, rd, xd, jmp, jmp_target)
-
-            if op_code == OpCodes.OP_FIN:
-                self.__pcb.quantum = 0
-            else:
-                self.__pcb.quantum -= 1
-
-        else:
-            # TODO: Context Switch
-            pass
+            # if op_code == OpCodes.OP_FIN:
+            #     self.__pcb.quantum = 0
+            # else:
+            #     self.__pcb.quantum -= 1
+        #
+        # else:
+        #     # TODO: Context Switch
+        #     pass
 
         self.clock_tick()
 
     def clock_tick(self):
         # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
-        logging.debug('%s waiting for clock sync', self.name)
+        # logging.debug('%s waiting for clock sync', self.name)
         self.__global_vars.clock_barrier.wait()
         self.clock += 1
         #time.sleep(1)
@@ -235,12 +238,12 @@ class Core(object):
             if i < len(self.registers) - 1:
                 reg_str += ','
 
-            if (i+1)%8 == 0:
-                reg_str +='\n '
-            else:
-                reg_str += ' '
+                if (i+1)%8 == 0:
+                    reg_str +='\n '
+                else:
+                    reg_str += ' '
 
-        reg_str += ']'
+        reg_str += '\n]'
         format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}\n'
         return format_str.format(name=self.name, pc=self.pc.data, lr=self.__lr.data, clock=self.clock,
                                  regs=reg_str)
