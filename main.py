@@ -72,7 +72,7 @@ def setup_modules(global_vars):
     return core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data
 
 
-def mem_test():
+def prueba_hilo20():
 
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
     logging.basicConfig(format=log_format, level=logging.INFO, datefmt="%H:%M:%S")
@@ -94,6 +94,33 @@ def mem_test():
 
     logging.info('Fin simulación single Core')
     logging.info(str(core0))
+
+
+def prueba_hilo12():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.INFO, datefmt="%H:%M:%S")
+
+    global_vars = util.GlobalVars(1)
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
+
+    datos = hilo.read_hilo('../hilos/11.txt')
+
+    mem_inst.load(384, datos)
+    core0.pc.data = 384
+    logging.info(str(mem_inst))
+
+    logging.info('Iniciando simulación single Core')
+    logging.info(str(core0))
+
+    while core0.state == core.Core.RUN:
+        core0.step()
+
+    logging.info('Fin simulación single Core')
+    logging.info(str(core0))
+    logging.info(str(cache_data0))
+    logging.info(str(mem_data))
+
 
 def main():
 
@@ -129,4 +156,4 @@ def main():
 
 
 if __name__ == '__main__':
-    mem_test()
+    prueba_hilo12()

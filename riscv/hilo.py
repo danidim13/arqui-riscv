@@ -24,6 +24,7 @@ class Pcb(object):
         self.ticks = 0
         self.status = 0
 
+
 def read_hilo(filename: str):
 
     instructions = []

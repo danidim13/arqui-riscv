@@ -115,7 +115,7 @@ class CacheMemAssoc(object):
 
         return format_str + ']\n'
 
-    def load(self, addr: int) -> int:
+    def load(self, addr: int) -> (int, bool):
         """
         Carga la palabra de una dirección de memoria. Utiliza el protocolo MSI, en caso de miss accede a bus.
         Si la dirección solicitada no mappea al caché levanta una excepción.
@@ -132,6 +132,7 @@ class CacheMemAssoc(object):
         op_finished = False
         op_local = True
         word = None
+        hit = True
 
         while not op_finished:
 
@@ -151,6 +152,7 @@ class CacheMemAssoc(object):
                 else:
                     logging.debug('Read Miss para {:d}, en [set: {:d}, tag: {:d}] '.format(addr, index, tag))
                     op_local = False
+                    hit = False
 
                 self._release_local()
 
@@ -180,15 +182,16 @@ class CacheMemAssoc(object):
                     assert len(victim_b.data) == victim_b.palabras
 
                     word = victim_b.data[offset]
+                    hit = False
 
                 self._release_with_bus()
                 op_finished = True
 
                 self._wait_penalty(BUS_DOWNTIME)
 
-        return word
+        return word, hit
 
-    def store(self, addr: int, val: int):
+    def store(self, addr: int, val: int) -> bool:
         assert self.__start_addr <= addr < self.__end_addr
         if addr % self.bpp != 0:
             logging.warning('STORE no alineado @{:d} !'.format(addr))
@@ -197,6 +200,7 @@ class CacheMemAssoc(object):
 
         op_finished = False
         op_local = True
+        hit = True
         word = None
 
         while not op_finished:
@@ -223,6 +227,7 @@ class CacheMemAssoc(object):
                 else:
                     logging.debug('Write Miss para {:d}, en [set: {:d}, tag: {:d}]'.format(addr, index, tag))
                     op_local = False
+                    hit = False
 
                 self._release_local()
 
@@ -266,13 +271,14 @@ class CacheMemAssoc(object):
                     assert len(victim_b.data) == victim_b.palabras
 
                     victim_b.data[offset] = val
+                    hit = False
 
                 self._release_with_bus()
                 op_finished = True
 
                 self._wait_penalty(BUS_DOWNTIME)
 
-        return
+        return hit
 
     def load_reserved(self, addr: int):
         # TODOCacheBlock

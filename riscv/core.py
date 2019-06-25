@@ -52,6 +52,10 @@ class Core(object):
     __pcb: Optional[Pcb]
     __global_vars: GlobalVars
 
+    RUN = 0
+    IDL = 1
+    END = 2
+
     def __init__(self, name: str, global_vars: GlobalVars):
 
         self.name = name
@@ -68,10 +72,15 @@ class Core(object):
 
         self.data_cache = None
         self.inst_cache = None
+        self.state = self.RUN
 
     def fetch(self):
 
-        ins = self.inst_cache.load(self.pc.data)
+        ins, hit = self.inst_cache.load(self.pc.data)
+
+        if not hit:
+            logging.info('Miss de instrucción @(0x{:04X})'.format(self.pc.data))
+
         self.pc.data = self.pc.data+4
         return ins
 
@@ -166,23 +175,34 @@ class Core(object):
             if op_code == OpCodes.OP_JAL:
                 jmp_target = self.pc.data + n
             elif op_code == OpCodes.OP_JALR:
-                x1 = self.registers[rf1]
+                x1 = self.registers[rf1].data
                 jmp_target = x1 + n
             else:
                 logging.error('Unexpected OPCODE {:s} in exec '.format(op_code.name))
 
             xd = self.pc.data
 
+        assert type(xd) == int or xd is None
+        assert type(memd) == int or memd is None
+        assert type(jmp_target) == int or jmp_target is None
+        assert type(jmp) == bool or jmp is None
+
         return xd, memd, jmp, jmp_target
 
     def memory(self, op_code: OpCodes, memd: int, rf2: int, xd: int):
 
         if op_code == OpCodes.OP_LW:
-            xd = self.data_cache.load(memd)
+            xd, hit = self.data_cache.load(memd)
+            assert type(xd) == int
+            if not hit:
+                logging.info('Miss de lectura @(0x{:04X})'.format(memd))
 
         elif op_code == OpCodes.OP_SW:
-            word = self.registers[rf2]
-            self.data_cache.store(memd, word)
+            word = self.registers[rf2].data
+            assert type(word) == int
+            hit = self.data_cache.store(memd, word)
+            if not hit:
+                logging.info('Miss de escritura @(0x{:04X})'.format(memd))
 
         elif op_code == OpCodes.OP_LR:
             pass
@@ -197,6 +217,7 @@ class Core(object):
                 self.pc.data = jmp_target
 
         if op_code in OP_ARITH_REG or op_code in OP_ROUTINE or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
+            assert type(xd) == int
             self.registers[rd].data = xd
 
     def step(self):
@@ -209,10 +230,12 @@ class Core(object):
         xd = self.memory(op_code, memd, rf2, xd)
         self.write_back(op_code, rd, xd, jmp, jmp_target)
 
-            # if op_code == OpCodes.OP_FIN:
-            #     self.__pcb.quantum = 0
-            # else:
-            #     self.__pcb.quantum -= 1
+        if op_code == OpCodes.OP_FIN:
+            self.state = self.END
+        #     self.__pcb.quantum = 0
+        # else:
+        #     self.__pcb.quantum -= 1
+
         #
         # else:
         #     # TODO: Context Switch
@@ -231,9 +254,11 @@ class Core(object):
 
         reg_str = '[\n '
 
+        reg_data_len = max([len(str(reg.data)) for reg in self.registers])
+
         for i in range(len(self.registers)):
             reg = self.registers[i]
-            reg_str += '[r{dir:02d}: {data:d}]'.format(dir=reg.address, data=reg.data)
+            reg_str += '[r{dir:02d}: {data:{reg_len}d}]'.format(dir=reg.address, data=reg.data, reg_len=reg_data_len)
 
             if i < len(self.registers) - 1:
                 reg_str += ','
