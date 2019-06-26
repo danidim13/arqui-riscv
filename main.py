@@ -104,7 +104,7 @@ def prueba_hilo12():
     global_vars = util.GlobalVars(1)
     core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
 
-    datos = hilo.read_hilo('../hilos/11.txt')
+    datos = hilo.read_hilo('../hilos/13.txt')
 
     mem_inst.load(384, datos)
     core0.pc.data = 384
