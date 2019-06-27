@@ -126,12 +126,12 @@ def prueba_varios_hilos():
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
     logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
 
-    programs = ['../hilos/11.txt',
-                '../hilos/12.txt',
-                '../hilos/13.txt',
-                '../hilos/14.txt',
-                '../hilos/15.txt',
-                '../hilos/16.txt']
+    programs = ['./hilos/11.txt',
+                './hilos/12.txt',
+                './hilos/13.txt',
+                './hilos/14.txt',
+                './hilos/15.txt',
+                './hilos/16.txt']
 
     global_vars = util.GlobalVars(1)
     core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
