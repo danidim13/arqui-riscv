@@ -1,6 +1,8 @@
 import threading
 import logging
+from queue import Empty
 from typing import List, Optional
+
 from .util import GlobalVars
 from .isa import OpCodes, decode as isa_decode
 from .hilo import Pcb
@@ -60,6 +62,7 @@ class Core(object):
 
         self.name = name
         self.clock = 0
+        self.pcb_start_clock = 0
 
         self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
         self.pc = Register(PC_ADDRESS, 'PC')
@@ -73,8 +76,106 @@ class Core(object):
         self.data_cache = None
         self.inst_cache = None
         self.state = self.RUN
+        self.log = {}
 
-    def fetch(self):
+    def run(self):
+
+        # Obtener primer PCB
+        self._pcb_in()
+        assert self.__pcb is not None
+
+        while self.state == self.RUN:
+            if self.__pcb.quantum > 0:
+                self.step()
+            else:
+                self._context_switch()
+
+    def step(self):
+
+        ins = self._fetch()
+        op_code, rd, rf1, rf2, inm = self._decode(ins)
+        xd, memd, jmp, jmp_target = self._execute(op_code, rf1, rf2, inm)
+        xd = self._memory(op_code, memd, rf2, xd)
+        self._write_back(op_code, rd, xd, jmp, jmp_target)
+
+        if op_code == OpCodes.OP_FIN:
+            self.__pcb.status = Pcb.FINISHED
+            self.__pcb.quantum = 0
+        else:
+            self.__pcb.quantum -= 1
+
+        self.clock_tick()
+
+    def clock_tick(self):
+        # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
+        # logging.debug('%s waiting for clock sync', self.name)
+        self.__global_vars.clock_barrier.wait()
+        self.clock += 1
+
+    def iddle(self):
+        self.__global_vars.clock_barrier.wait()
+
+    def _context_switch(self):
+        self._pcb_out()
+        self._pcb_in()
+        self.clock_tick()
+
+    def _pcb_out(self):
+        assert self.__pcb is not None
+        assert self.__pcb.quantum == 0
+
+        pcb_ticks = self.clock - self.pcb_start_clock
+        self.__pcb.ticks += pcb_ticks
+        self.__pcb.pc = self.pc.data
+        assert len(self.__pcb.registers) == len(self.registers)
+        self.__pcb.registers[:] = [r.data for r in self.registers]
+
+        if self.__pcb.status == Pcb.FINISHED:
+            logging.info('El hillilo {:s} terminó de correr'.format(self.__pcb.name))
+            self.__global_vars.scheduler.put_finished(self.__pcb)
+        else:
+            assert self.__pcb.status == Pcb.RUNNING
+            self.__pcb.status = Pcb.READY
+            self.__global_vars.scheduler.put_ready(self.__pcb)
+
+        self.__pcb = None
+
+    def _pcb_in(self):
+
+        assert self.__pcb is None
+
+        try:
+            self.__pcb = self.__global_vars.scheduler.next_ready_thread()
+            got_pcb = True
+
+        except Empty as e:
+            logging.debug(e)
+            got_pcb = False
+
+        if got_pcb:
+
+            assert self.__pcb.status == Pcb.READY
+            self.__pcb.status = Pcb.RUNNING
+            self.pcb_start_clock = self.clock
+
+            # Copiar el estado del procesador
+            self.pc.data = self.__pcb.pc
+            assert len(self.__pcb.registers) == len(self.registers)
+            for i in range(1, len(self.registers)):
+                self.registers[i].data = self.__pcb.registers[i]
+
+            self.state = self.RUN
+
+            if self.__pcb.pid in self.log.keys():
+                self.log[self.__pcb.pid] += 1
+            else:
+                self.log[self.__pcb.pid] = 1
+
+        else:
+            logging.info('No hay más hilillos pendientes de ejecución')
+            self.state = self.IDL
+
+    def _fetch(self):
 
         ins, hit = self.inst_cache.load(self.pc.data)
 
@@ -84,7 +185,7 @@ class Core(object):
         self.pc.data = self.pc.data+4
         return ins
 
-    def decode(self, instruction: int):
+    def _decode(self, instruction: int):
         op_code, arg1, arg2, arg3 = isa_decode(instruction)
         op_code = OpCodes(op_code)
 
@@ -92,7 +193,6 @@ class Core(object):
         rf1 = None
         rf2 = None
         inm = None
-
 
         logging.info('Operación {:s}'.format(op_code.name))
 
@@ -122,7 +222,7 @@ class Core(object):
 
         return op_code, rd, rf1, rf2, inm
 
-    def execute(self, op_code: OpCodes, rf1: int, rf2: int, inm: int):
+    def _execute(self, op_code: OpCodes, rf1: int, rf2: int, inm: int):
 
         # FIXME: xd y memd se pueden fusionar en una sola variable (alu_out)
         xd = None
@@ -189,7 +289,7 @@ class Core(object):
 
         return xd, memd, jmp, jmp_target
 
-    def memory(self, op_code: OpCodes, memd: int, rf2: int, xd: int):
+    def _memory(self, op_code: OpCodes, memd: int, rf2: int, xd: int):
 
         if op_code == OpCodes.OP_LW:
             xd, hit = self.data_cache.load(memd)
@@ -211,7 +311,7 @@ class Core(object):
 
         return xd
 
-    def write_back(self, op_code, rd, xd, jmp, jmp_target):
+    def _write_back(self, op_code, rd, xd, jmp, jmp_target):
         if op_code in OP_ROUTINE or op_code in OP_BRANCH:
             if jmp:
                 self.pc.data = jmp_target
@@ -219,36 +319,6 @@ class Core(object):
         if op_code in OP_ARITH_REG or op_code in OP_ROUTINE or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
             assert type(xd) == int
             self.registers[rd].data = xd
-
-    def step(self):
-
-        # if self.__pcb.quantum > 0:
-
-        ins = self.fetch()
-        op_code, rd, rf1, rf2, inm = self.decode(ins)
-        xd, memd, jmp, jmp_target = self.execute(op_code, rf1, rf2, inm)
-        xd = self.memory(op_code, memd, rf2, xd)
-        self.write_back(op_code, rd, xd, jmp, jmp_target)
-
-        if op_code == OpCodes.OP_FIN:
-            self.state = self.END
-        #     self.__pcb.quantum = 0
-        # else:
-        #     self.__pcb.quantum -= 1
-
-        #
-        # else:
-        #     # TODO: Context Switch
-        #     pass
-
-        self.clock_tick()
-
-    def clock_tick(self):
-        # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
-        # logging.debug('%s waiting for clock sync', self.name)
-        self.__global_vars.clock_barrier.wait()
-        self.clock += 1
-        #time.sleep(1)
 
     def __str__(self):
 

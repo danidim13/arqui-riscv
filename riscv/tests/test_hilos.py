@@ -65,13 +65,13 @@ class SingleCoreTestCase(unittest.TestCase):
 
     def test_hilo11(self):
 
-        instrucciones = hilo.read_hilo('hilos/11.txt')
-
+        path = 'hilos/11.txt'
+        instrucciones = util.read_hilo(path)
         self.mem_inst.load(384, instrucciones)
-        self.core0.pc.data = 384
+        pcb = hilo.Pcb(name=path)
+        self.global_vars.scheduler.put_ready(pcb)
 
-        while self.core0.state == core.Core.RUN:
-            self.core0.step()
+        self.core0.run()
 
         expected_regs = [(3, 5), (4, 200), (8, 8), (20, 2)]
 
@@ -79,15 +79,16 @@ class SingleCoreTestCase(unittest.TestCase):
             r_dir, r_val = t
             self.assertEqual(self.core0.registers[r_dir].data, r_val, "Unexpected register value in r{:02d}".format(r_dir))
 
+
     def test_hilo12(self):
 
-        instrucciones = hilo.read_hilo('hilos/12.txt')
-
+        path = 'hilos/12.txt'
+        instrucciones = util.read_hilo(path)
         self.mem_inst.load(384, instrucciones)
-        self.core0.pc.data = 384
+        pcb = hilo.Pcb(name=path)
+        self.global_vars.scheduler.put_ready(pcb)
 
-        while self.core0.state == core.Core.RUN:
-            self.core0.step()
+        self.core0.run()
 
         expected_regs = [(2, 2), (4, 99), (5, 99), (8, 132), (10, 99), (21, 10), (22, 12), (23, 6)]
 

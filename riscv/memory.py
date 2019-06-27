@@ -2,9 +2,11 @@ from __future__ import division
 
 import threading
 import logging
-import random
-from typing import List, Optional
-from .core import Core
+from typing import List, Optional, TYPE_CHECKING
+from .isa import decode
+
+if TYPE_CHECKING:
+    from .core import Core
 
 FI = 0
 """Bandera de inválido en caché"""
@@ -99,7 +101,7 @@ class CacheMemAssoc(object):
 
         self.lock = threading.RLock()
 
-        self.owner_core: Core = None
+        self.owner_core: 'Core' = None
         self.bus: Bus = None
         self._alien_core = None
 
@@ -288,7 +290,7 @@ class CacheMemAssoc(object):
         # TODO
         pass
 
-    def acquire_external(self, requester: Core):
+    def acquire_external(self, requester: 'Core'):
         """
         Intenta bloquear la caché para uso externo (a través del bus)
 
@@ -310,7 +312,7 @@ class CacheMemAssoc(object):
         target_block = self._find(index, tag)
         return target_block
 
-    def release_external(self, requester: Core):
+    def release_external(self, requester: 'Core'):
         """
         Libera la caché luego de un uso externo (a través del bus)
 
@@ -376,7 +378,7 @@ class CacheMemAssoc(object):
         victim_b.flag = FI
         return victim_b
 
-    def _wait_penalty(self, clock_cycles: int, waiting_core: Core = None):
+    def _wait_penalty(self, clock_cycles: int, waiting_core: 'Core' = None):
         """
         Espera cierta cantidad de ciclos de reloj (en caso de Miss p.e.)
 
@@ -389,7 +391,7 @@ class CacheMemAssoc(object):
         for i in range(clock_cycles):
             waiting_core.clock_tick()
 
-    def _acquire_local(self, waiting_core: Core = None):
+    def _acquire_local(self, waiting_core: 'Core' = None):
 
         if waiting_core is None:
             waiting_core = self.owner_core
@@ -406,7 +408,7 @@ class CacheMemAssoc(object):
 
         return
 
-    def _acquire_with_bus(self, waiting_core: Core = None):
+    def _acquire_with_bus(self, waiting_core: 'Core' = None):
 
         if waiting_core is None:
             waiting_core = self.owner_core
@@ -481,6 +483,7 @@ class RamMemory(object):
         self.ppb = ppb
 
         self.blocks = [RamBlock(i*ppb*bpp + start_addr, ppb, bpp) for i in range(num_blocks)]
+        self.data_format = 'default'
 
     def get(self, addr: int) -> RamBlock:
         return self._find(addr)
@@ -506,7 +509,7 @@ class RamMemory(object):
                 off_i = 0
                 bn_i += 1
 
-        last_addr = self.__start_addr + bn_i*self.ppb*self.bpp + (off_i-1)*self.bpp
+        last_addr = self.__start_addr + bn_i*self.ppb*self.bpp + (off_i)*self.bpp
         logging.debug('Finished copying last address @ 0x{:04X},  next = [block {:d} offset {:d}]'.format(last_addr, bn_i, off_i))
 
     def _find(self, addr: int):
@@ -520,8 +523,21 @@ class RamMemory(object):
     def __str__(self):
 
         format_str = '{:s} :\n[\n'.format(self.name)
+
         for block in self.blocks:
-            format_str += ' 0x{:04X}: [{:s}]\n'.format(block.address, str(block))
+
+            if self.data_format == 'default':
+                format_str += ' 0x{:04X}: [{:s}]\n'.format(block.address, str(block))
+
+            elif self.data_format == 'hex':
+                block_data_str = [hex(data) for data in block.data]
+                block_str = 'B{:02d}, data: {:s}'.format(block.address//(block.bpp*block.palabras), str(block_data_str))
+                format_str += ' 0x{:04X}: [{:s}]\n'.format(block.address, block_str)
+
+            elif self.data_format == 'ins':
+                block_data_str = [decode(x) for x in block.data]
+                block_str = 'B{:02d}, data: {:s}'.format(block.address//(block.bpp*block.palabras), str(block_data_str))
+                format_str += ' 0x{:04X}: [{:s}]\n'.format(block.address, block_str)
 
         return format_str + ']\n'
 

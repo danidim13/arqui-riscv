@@ -121,6 +121,38 @@ def prueba_hilo12():
     logging.info(str(cache_data0))
     logging.info(str(mem_data))
 
+def prueba_varios_hilos():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
+
+    programs = ['../hilos/11.txt',
+                '../hilos/12.txt',
+                '../hilos/13.txt',
+                '../hilos/14.txt',
+                '../hilos/15.txt',
+                '../hilos/16.txt']
+
+    global_vars = util.GlobalVars(1)
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
+    mem_inst.data_format = 'default'
+
+    inst_addr = 384
+    util.cargar_hilos(programs, global_vars.scheduler, mem_inst, inst_addr)
+    logging.info(mem_inst)
+
+    core0.run()
+
+    logging.info('Finalizando simulación a continuación se presenta el estado final\n\n\n')
+
+    for i in range(len(programs)):
+        pcb = global_vars.scheduler.finished_queue.get_nowait()
+        logging.info(pcb)
+
+    logging.info(core0)
+    logging.info(cache_data0)
+    logging.info(mem_data)
+
 
 def main():
 
@@ -156,4 +188,4 @@ def main():
 
 
 if __name__ == '__main__':
-    prueba_hilo12()
+    prueba_varios_hilos()
