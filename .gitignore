@@ -3,3 +3,7 @@
 
 # Virtual environment
 venv/*
+
+# Otros
+*.log
+*.txt
