@@ -105,6 +105,9 @@ class CacheMemAssoc(object):
         self.bus: Bus = None
         self._alien_core = None
 
+        self.lr_dir = -1
+        """Bloque reservado"""
+
     def __str__(self):
 
         format_str = '{:s} ({:d}-way associative cache):\n[\n'.format(self.name, self.assoc)
@@ -219,6 +222,9 @@ class CacheMemAssoc(object):
 
                     if target_block.flag == FM:
                         target_block.data[offset] = val
+                        # Si el bloque estaba reservado se invalida la reserva
+                        if self.lr_dir == block_num:
+                            self.lr_dir = -1
                         op_finished = True
 
                     else:
@@ -275,6 +281,10 @@ class CacheMemAssoc(object):
                     victim_b.data[offset] = val
                     hit = False
 
+                # Si el bloque estaba reservado se invalida la reserva
+                if self.lr_dir == block_num:
+                    self.lr_dir = -1
+
                 self._release_with_bus()
                 op_finished = True
 
@@ -300,15 +310,23 @@ class CacheMemAssoc(object):
         self._acquire_local(waiting_core=requester)
         self._alien_core = requester
 
-    def snoop_find(self, addr: int) -> Optional[CacheBlock]:
+    def snoop_find(self, addr: int, invalidate_reserve: bool = False) -> Optional[CacheBlock]:
         """
         Busca si una dirección se encuentra en el caché. Este método debe usarse en conjunto con ``acquire_external()``
         y ``release_external()``.
 
         :param addr:    La dirección que se busca
+        :param invalidate_reserve: Indica si es necesario invalidar la reserva (solo en caso de write)
         :return:        El bloque si está en caché, None en caso contrario
         """
         block_num, offset, index, tag = self._process_address(addr)
+
+        if invalidate_reserve:
+            logging.debug('Reserve invalidate requested on {:s} @block {:d}'.format(self.name, block_num))
+            if block_num == self.lr_dir:
+                logging.debug('Reserve was invalidated')
+                self.lr_dir = -1
+
         target_block = self._find(index, tag)
         return target_block
 
@@ -608,7 +626,7 @@ class Bus(object):
                 continue
 
             cache.acquire_external(requester.owner_core)
-            cache_block = cache.snoop_find(addr)
+            cache_block = cache.snoop_find(addr, True)
 
             if cache_block:
                 # Hit
