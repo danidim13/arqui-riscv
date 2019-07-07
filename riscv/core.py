@@ -52,7 +52,7 @@ class Core(object):
     __lr: Register
     __lr_lock: threading.RLock
     __pcb: Optional[Pcb]
-    __global_vars: GlobalVars
+    _global_vars: GlobalVars
 
     RUN = 0
     IDL = 1
@@ -67,7 +67,7 @@ class Core(object):
         self.registers = [Register(i, 'General purpose', i == 0) for i in range(32)]
         self.pc = Register(PC_ADDRESS, 'PC')
 
-        self.__global_vars = global_vars
+        self._global_vars = global_vars
         self.__pcb = None
 
         self.__lr = Register(LR_ADDRESS, 'LR')
@@ -108,14 +108,16 @@ class Core(object):
 
     def clock_tick(self):
         # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
-        # logging.debug('%s waiting for clock sync', self.name)
-        self.__global_vars.clock_barrier.wait()
+        logging.debug('%s waiting for clock sync', self.name)
         self.clock += 1
+        self._global_vars.clock_barrier.wait()
 
     def iddle(self):
-        self.__global_vars.clock_barrier.wait()
+        logging.debug('%s waiting for clock sync', self.name)
+        self._global_vars.clock_barrier.wait()
 
     def _context_switch(self):
+        logging.debug('{:s} haciendo CONTEXT SWITCH'.format(self.name))
         self._pcb_out()
         self._pcb_in()
         self.clock_tick()
@@ -124,6 +126,7 @@ class Core(object):
         assert self.__pcb is not None
         assert self.__pcb.quantum == 0
 
+        logging.info('El hilillo {:s} va de salida'.format(self.__pcb.name))
         pcb_ticks = self.clock - self.pcb_start_clock
         self.__pcb.ticks += pcb_ticks
         self.__pcb.pc = self.pc.data
@@ -132,11 +135,11 @@ class Core(object):
 
         if self.__pcb.status == Pcb.FINISHED:
             logging.info('El hillilo {:s} terminó de correr'.format(self.__pcb.name))
-            self.__global_vars.scheduler.put_finished(self.__pcb)
+            self._global_vars.scheduler.put_finished(self.__pcb)
         else:
             assert self.__pcb.status == Pcb.RUNNING
             self.__pcb.status = Pcb.READY
-            self.__global_vars.scheduler.put_ready(self.__pcb)
+            self._global_vars.scheduler.put_ready(self.__pcb)
 
         self.__pcb = None
 
@@ -145,11 +148,11 @@ class Core(object):
         assert self.__pcb is None
 
         try:
-            self.__pcb = self.__global_vars.scheduler.next_ready_thread()
+            self.__pcb = self._global_vars.scheduler.next_ready_thread()
             got_pcb = True
 
         except Empty as e:
-            logging.debug(e)
+            logging.debug('No se consiguio hilo' + str(e))
             got_pcb = False
 
         if got_pcb:
@@ -170,6 +173,8 @@ class Core(object):
                 self.log[self.__pcb.pid] += 1
             else:
                 self.log[self.__pcb.pid] = 1
+
+            logging.info('El hilillo {:s} viene entrando'.format(self.__pcb.name))
 
         else:
             logging.info('No hay más hilillos pendientes de ejecución')

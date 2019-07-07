@@ -401,8 +401,11 @@ class CacheMemAssoc(object):
             got_lock = self.lock.acquire(False)
 
             if got_lock:
-                logging.debug('Got cache lock')
+                logging.debug('Got {:s} cache lock'.format(self.name))
                 break
+            else:
+                logging.debug('Failed to get {:s} cache lock'.format(self.name))
+
 
             waiting_core.clock_tick()
 
@@ -422,7 +425,7 @@ class CacheMemAssoc(object):
                 cache_locked = self.lock.acquire(False)
 
                 if cache_locked:
-                    logging.debug('Got cache lock')
+                    logging.debug('Got {:s} cache lock'.format(self.name))
                     break
 
                 logging.debug('Giving up bus lock')
@@ -433,12 +436,12 @@ class CacheMemAssoc(object):
         return
 
     def _release_local(self):
-        logging.debug('Releasing cache lock')
+        logging.debug('Releasing {:s} cache lock'.format(self.name))
         self.lock.release()
         return
 
     def _release_with_bus(self):
-        logging.debug('Releasing bus and cache lock')
+        logging.debug('Releasing bus and {:s} cache lock'.format(self.name))
         self.lock.release()
         self.bus.lock.release()
         return
@@ -625,6 +628,7 @@ class Bus(object):
                     logging.debug('Snooped shared block, invalidating')
                     assert cache_block.flag == FC
                     cache_block.flag = FI
+                    cache.release_external(requester.owner_core)
 
             else:
                 # Miss
@@ -632,7 +636,7 @@ class Bus(object):
 
         if block is None:
 
-            logging.debug('Snoop Exclusive miss @{:d} defaulting to memory'.format(addr))
+            logging.debug('Snoop Exclusive miss or all shared @{:d} defaulting to memory'.format(addr))
             block = self.__memory.get(addr)
 
         return block

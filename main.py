@@ -6,44 +6,16 @@ import time
 from riscv import core, util, memory, hilo
 
 
-def run_cpu(cpu: core.Core, other: core.Core):
+def run_cpu(cpu: core.Core):
+    logging.info('Iniciando ejecución de {:s}'.format(cpu.name))
+    cpu.run()
 
-    logging.info('Starting thread %s', threading.current_thread().getName())
-    logging.info(str(cpu))
-    logging.info(str(cpu.inst_cache))
+    logging.info('Iddling Core {:s}'.format(cpu.name))
 
-    direcciones = [4, 0, 8, 4, 12, 16, 32, 124]
+    while not cpu._global_vars.done:
+        cpu.iddle()
 
-    for addr in direcciones:
-        w = cpu.inst_cache.load(addr)
-        logging.debug('Got word {:d} @{:d}'.format(w, addr))
-        cpu.clock_tick()
-
-    #cpu.inst_cache.sets[0].lines[0].flag = memory.FM
-    #cpu.inst_cache.sets[0].lines[0].data[0] = 200
-    cpu.inst_cache.store(1, 200)
-    logging.info('Stored 200 @{:d}'.format(0))
-
-    w = cpu.inst_cache.load(128)
-    logging.debug('Got word {:d} @{:d}'.format(w, 128))
-    cpu.clock_tick()
-
-    logging.info(str(cpu))
-    logging.info(str(cpu.inst_cache))
-
-
-    w = other.inst_cache.load(4)
-    logging.debug('Got word {:d} @{:d}'.format(w, 4))
-    other.inst_cache.store(4, 300)
-    logging.debug('Stored word {:d} @{:d}'.format(300, 4))
-    cpu.clock_tick()
-
-    logging.info('Thread ending %s', threading.current_thread().getName())
-    logging.info(str(cpu))
-    logging.info(str(cpu.inst_cache))
-
-    logging.info(str(other))
-    logging.info(str(other.inst_cache))
+    logging.info('Finalizando ejecución de {:s}'.format(cpu.name))
 
 
 def setup_modules(global_vars):
@@ -154,6 +126,68 @@ def prueba_varios_hilos():
     logging.info(mem_data)
 
 
+def prueba_multicore():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.DEBUG, datefmt="%H:%M:%S")
+
+    programs = ['./hilos/11.txt',
+                './hilos/12.txt',
+                './hilos/13.txt',
+                './hilos/14.txt',
+                './hilos/15.txt',
+                './hilos/16.txt']
+
+    global_vars = util.GlobalVars(3)
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
+    mem_inst.data_format = 'default'
+
+    inst_addr = 384
+    util.cargar_hilos(programs, global_vars.scheduler, mem_inst, inst_addr)
+    logging.info(mem_inst)
+
+
+    t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, ))
+    t_cpu1 = threading.Thread(target=run_cpu, name='CPU1', args=(core1, ))
+
+    t_cpu0.start()
+    t_cpu1.start()
+
+    logging.info('Thread {} spawned children'.format(threading.current_thread().getName()))
+
+    while not global_vars.done:
+        while global_vars.clock_barrier.n_waiting < 2:
+            time.sleep(0.001)
+
+        # logging.debug("Ambos hilos llegaron a clock")
+
+        for c in [core0, core1]:
+            if c.state == core.Core.IDL:
+                logging.debug('{:s} ya terminó'.format(c.name))
+
+        if core0.state == core.Core.IDL and core1.state == core.Core.IDL:
+            logging.info('Ambos Cores terminaron, finalizando simulación')
+            global_vars.done = True
+
+        global_vars.clock_barrier.wait()
+
+    t_cpu0.join()
+    t_cpu1.join()
+
+    logging.info('Finalizando simulación a continuación se presenta el estado final\n\n\n')
+
+    for i in range(len(programs)):
+        pcb = global_vars.scheduler.finished_queue.get_nowait()
+        logging.info(pcb)
+
+    logging.info(core0)
+    logging.info(cache_data0)
+    logging.info(core1)
+    logging.info(cache_data1)
+    logging.info(mem_data)
+
+
+
 def main():
 
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
@@ -188,4 +222,4 @@ def main():
 
 
 if __name__ == '__main__':
-    prueba_varios_hilos()
+    prueba_multicore()
