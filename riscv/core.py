@@ -13,6 +13,7 @@ LR_ADDRESS = 33
 
 OP_ARITH_REG = (OpCodes.OP_ADD, OpCodes.OP_SUB, OpCodes.OP_MUL, OpCodes.OP_DIV)
 OP_LOAD_STORE = (OpCodes.OP_LW, OpCodes.OP_SW)
+OP_LR_SC = (OpCodes.OP_LR, OpCodes.OP_SC)
 OP_BRANCH = (OpCodes.OP_BEQ, OpCodes.OP_BNE)
 OP_ROUTINE = (OpCodes.OP_JAL, OpCodes.OP_JALR)
 
@@ -71,6 +72,7 @@ class Core(object):
         self.__pcb = None
 
         self.__lr = Register(LR_ADDRESS, 'LR')
+        self.__lr.data = -1
         self.__lr_lock = threading.RLock()
 
         self.data_cache = None
@@ -118,6 +120,11 @@ class Core(object):
 
     def _context_switch(self):
         logging.debug('{:s} haciendo CONTEXT SWITCH'.format(self.name))
+
+        self.__lr_lock.acquire()
+        self.__lr.data = -1
+        self.__lr_lock.release()
+
         self._pcb_out()
         self._pcb_in()
         self.clock_tick()
@@ -222,6 +229,7 @@ class Core(object):
             rf1 = arg2
 
         elif op_code == OpCodes.OP_SC:
+            rd = arg2
             rf1 = arg1
             rf2 = arg2
 
@@ -264,6 +272,18 @@ class Core(object):
             x1 = self.registers[rf1].data
             n = inm
             memd = x1 + n
+
+        elif op_code == OpCodes.OP_LR:
+            x1 = self.registers[rf1].data
+            self.__lr_lock.acquire()
+            self.__lr.data = x1
+            self.__lr_lock.release()
+            memd = x1
+
+        elif op_code == OpCodes.OP_SC:
+            x1 = self.registers[rf1].data
+            # x2 = self.registers[rf2].data
+            memd = x1
 
         elif op_code in OP_BRANCH:
             x1 = self.registers[rf1].data
@@ -316,9 +336,31 @@ class Core(object):
                 logging.info('Miss de escritura @(0x{:04X})'.format(memd))
 
         elif op_code == OpCodes.OP_LR:
-            pass
+            xd, hit = self.data_cache.load_reserved(memd)
+            assert type(xd) == int
+            if not hit:
+                logging.info('Miss de lectura reservada @(0x{:04X})'.format(memd))
+
         elif op_code == OpCodes.OP_SC:
-            pass
+
+            word = self.registers[rf2].data
+            self.__lr_lock.acquire()
+            success = self.__lr.data == memd
+            self.__lr_lock.release()
+
+            if success:
+                hit, success = self.data_cache.store_conditional(memd, word)
+                if not hit:
+                    logging.info('Miss de escritura condicional @(0x{:04X})'.format(memd))
+            else:
+                logging.info('Reserva rota @(0x{:04X})'.format(memd))
+
+            if success:
+                logging.info('SC success!')
+                xd = word
+            else:
+                logging.info('SC failure!')
+                xd = 0
 
         return xd
 
@@ -327,7 +369,7 @@ class Core(object):
             if jmp:
                 self.pc.data = jmp_target
 
-        if op_code in OP_ARITH_REG or op_code in OP_ROUTINE or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
+        if op_code in OP_ARITH_REG or op_code in OP_ROUTINE or op_code in OP_LR_SC or op_code == OpCodes.OP_ADDI or op_code == OpCodes.OP_LW:
             assert type(xd) == int
             self.registers[rd].data = xd
 
