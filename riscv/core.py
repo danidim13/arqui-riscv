@@ -205,7 +205,7 @@ class Core(object):
             rd = arg1
             rf1 = arg2
             rf2 = arg3
-            logging.debug('Ejecutando -->  {:s} r{:02d}, r{:02d}, r{:02d}'.format(op_code.name, rd, rf1, rf2))
+            # logging.debug('Ejecutando -->  {:s} r{:02d}, r{:02d}, r{:02d}'.format(op_code.name, rd, rf1, rf2))
 
         elif op_code in OP_BRANCH or op_code == OpCodes.OP_SW:
             rf1 = arg1
@@ -224,6 +224,12 @@ class Core(object):
         elif op_code == OpCodes.OP_SC:
             rf1 = arg1
             rf2 = arg2
+
+        elif op_code == OpCodes.OP_FIN or op_code == OpCodes.OP_NOOP:
+            pass
+
+        else:
+            logging.warning('Unknown OPCODE {:s}'.format(op_code.name))
 
         return op_code, rd, rf1, rf2, inm
 

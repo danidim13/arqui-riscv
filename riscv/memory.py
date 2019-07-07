@@ -197,6 +197,15 @@ class CacheMemAssoc(object):
         return word, hit
 
     def store(self, addr: int, val: int) -> bool:
+        """
+        Almacena una palabra en una dirección de memoria. Utiliza el protocolo MSI, en caso de miss o hit de bloque
+        compartido accede a bus. Si la dirección solicitada no mappea en el caché levanta una excepción. Además,
+        si la dirección escrita estaba reservada invalida la reserva.
+
+        :param addr:    Dirección de memoria de la palabra que va a escribir
+        :param val:     El valor a escribir
+        :return:        Si fue hit
+        """
         assert self.__start_addr <= addr < self.__end_addr
         if addr % self.bpp != 0:
             logging.warning('STORE no alineado @{:d} !'.format(addr))
@@ -224,6 +233,7 @@ class CacheMemAssoc(object):
                         target_block.data[offset] = val
                         # Si el bloque estaba reservado se invalida la reserva
                         if self.lr_dir == block_num:
+                            logging.debug('Invalidando reserva del bloque {:d} en {:s}'.format(block_num, self.name))
                             self.lr_dir = -1
                         op_finished = True
 
@@ -283,6 +293,7 @@ class CacheMemAssoc(object):
 
                 # Si el bloque estaba reservado se invalida la reserva
                 if self.lr_dir == block_num:
+                    logging.debug('Invalidando reserva del bloque {:d} en {:s}'.format(block_num, self.name))
                     self.lr_dir = -1
 
                 self._release_with_bus()
@@ -292,13 +303,207 @@ class CacheMemAssoc(object):
 
         return hit
 
-    def load_reserved(self, addr: int):
-        # TODOCacheBlock
+    def load_reserved(self, addr: int) -> (int, bool):
+        """
+        Carga la palabra de una dirección de memoria. Utiliza el protocolo MSI, en caso de miss accede a bus.
+        Si la dirección solicitada no mappea al caché levanta una excepción. Además escribe una reserva en el bloque.
+
+        :param addr:    Dirección de memoria de la palabra solicitada
+        :return:        La palabra solicitada y si fue hit
+        """
+        assert self.__start_addr <= addr < self.__end_addr
+        if addr % self.bpp != 0:
+            logging.warning('LOAD no alineado @{:d} !'.format(addr))
+
+        block_num, offset, index, tag = self._process_address(addr)
+
+        op_finished = False
+        op_local = True
+        word = None
+        hit = True
+
+        while not op_finished:
+
+            # Sin acceso a bus
+            if op_local:
+
+                self._acquire_local()
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    logging.debug('Read Reserve Hit para {:d}, en [set: {:d}, block: {:d}, tag: {:d}] '.format(addr, index, target_block.address, tag))
+                    logging.debug('Reservando el bloque {:d} en {:s}'.format(block_num, self.name))
+                    self.lr_dir = block_num
+                    word = target_block.data[offset]
+                    op_finished = True
+
+                # MISS
+                else:
+                    logging.debug('Read Reserve Miss para {:d}, en [set: {:d}, tag: {:d}] '.format(addr, index, tag))
+                    op_local = False
+                    hit = False
+
+                self._release_local()
+
+            # Acceso a bus
+            else:
+
+                self._wait_penalty(1)
+                self._acquire_with_bus()
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    logging.debug('Reservando el bloque {:d} en {:s}'.format(block_num, self.name))
+                    self.lr_dir = block_num
+                    word = target_block.data[offset]
+
+                # MISS
+                else:
+
+                    victim_b = self._find_victim(index)
+
+                    mem_b = self.bus.snoop_shared(addr, self)
+                    self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    # Sustituir los datos del bloque
+                    victim_b.data[:] = mem_b.data[:]
+                    victim_b.flag = FC
+                    victim_b.tag = block_num
+                    assert len(victim_b.data) == victim_b.palabras
+
+                    logging.debug('Reservando el bloque {:d} en {:s}'.format(block_num, self.name))
+                    self.lr_dir = block_num
+                    word = victim_b.data[offset]
+                    hit = False
+
+                self._release_with_bus()
+                op_finished = True
+
+                self._wait_penalty(BUS_DOWNTIME)
+
+        return word, hit
         pass
 
-    def store_conditional(self, addr: int, val: int):
-        # TODO
-        pass
+    def store_conditional(self, addr: int, val: int) -> (bool, bool):
+        """
+        Almacena una palabra en una dirección de memoria previamente reservada con LR. Utiliza el protocolo MSI, en
+        caso de miss o hit de bloque compartido accede a bus. Si la dirección solicitada no mappea en el caché levanta
+        una excepción. Además, si la dirección no estaba reservada la palabra no es escrita.
+
+        :param addr:    Dirección de memoria de la palabra que va a escribir
+        :param val:     El valor a escribir
+        :return:        Si fue hit y si tuvo éxito la escritura
+        """
+        assert self.__start_addr <= addr < self.__end_addr
+        if addr % self.bpp != 0:
+            logging.warning('STORE no alineado @{:d} !'.format(addr))
+
+        block_num, offset, index, tag = self._process_address(addr)
+
+        op_finished = False
+        op_local = True
+        hit = True
+        success = False
+
+        while not op_finished:
+
+            # Sin acceso a bus
+            if op_local:
+
+                self._acquire_local()
+
+                if self.lr_dir != block_num:
+                    op_finished = True
+                    logging.debug('Write Conditional fallo temprano reserva inválida para {:d}, esperaba {:d} y obtuve {:d}'.format(addr, block_num, self.lr_dir))
+
+                else:
+
+                    target_block = self._find(index, tag)
+
+                    # HIT
+                    if target_block is not None:
+                        logging.debug('Write Conditional Hit para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                        if target_block.flag == FM:
+                            if self.lr_dir == block_num:
+                                target_block.data[offset] = val
+                                success = True
+                            self.lr_dir = -1
+                            op_finished = True
+
+                        else:
+                            logging.debug('Bloque compartido, se debe invalidar con snooping')
+                            op_local = False
+
+                    # MISS
+                    else:
+                        logging.debug('Write Conditional Miss para {:d}, en [set: {:d}, tag: {:d}]'.format(addr, index, tag))
+                        op_local = False
+                        hit = False
+
+                self._release_local()
+
+            # Acceso a bus
+            else:
+
+                self._wait_penalty(1)
+                self._acquire_with_bus()
+
+                target_block = self._find(index, tag)
+
+                # HIT
+                if target_block is not None:
+                    word = target_block.data[offset]
+                    logging.debug('Write Conditional Hit con bus para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                    if target_block.flag == FM:
+                        logging.warning('Camino inesperado en Store Conditional para {:d}, en [set: {:d}, block: {:d}, tag: {:d}]'.format(addr, index, target_block.address, tag))
+
+                    else:
+                        assert target_block.flag == FC
+                        logging.debug('Bloque compartido, invalidando por medio de snooping')
+                        mem_b = self.bus.snoop_exclusive(addr, self)
+                        self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    if self.lr_dir == block_num:
+                        target_block.data[offset] = val
+                        success = True
+                    target_block.flag = FM
+
+                # MISS
+                else:
+
+                    victim_b = self._find_victim(index)
+
+                    mem_b = self.bus.snoop_exclusive(addr, self)
+                    self._wait_penalty(MEMORY_LOAD_PENALTY)
+
+                    # Sustituir los datos del bloque
+                    victim_b.data[:] = mem_b.data[:]
+                    victim_b.flag = FM
+                    victim_b.tag = block_num
+                    assert len(victim_b.data) == victim_b.palabras
+
+                    if self.lr_dir == block_num:
+                        victim_b.data[offset] = val
+                        success = True
+
+                    hit = False
+
+                # Consumir reserva
+                self.lr_dir = -1
+
+                self._release_with_bus()
+                op_finished = True
+
+                self._wait_penalty(BUS_DOWNTIME)
+
+        if success:
+            logging.debug('Éxito en la escritura condicional')
+
+        return hit, success
 
     def acquire_external(self, requester: 'Core'):
         """
