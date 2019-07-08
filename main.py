@@ -126,6 +126,68 @@ def prueba_varios_hilos():
     logging.info(mem_data)
 
 
+def prueba_multicore_lrsc():
+
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
+    logging.basicConfig(format=log_format, level=logging.INFO, datefmt="%H:%M:%S")
+
+    programs = ['./hilos_adv/0.txt',
+                './hilos_adv/1.txt',
+                './hilos_adv/2.txt',
+                './hilos_adv/3.txt',
+                './hilos_adv/4.txt',
+                './hilos_adv/5.txt',
+                './hilos_adv/6.txt']
+
+    global_vars = util.GlobalVars(3)
+    core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
+    mem_inst.data_format = 'default'
+
+    inst_addr = 384
+    util.cargar_hilos(programs, global_vars.scheduler, mem_inst, inst_addr)
+    logging.info(mem_inst)
+
+    t_cpu0 = threading.Thread(target=run_cpu, name='CPU0', args=(core0, ))
+    t_cpu1 = threading.Thread(target=run_cpu, name='CPU1', args=(core1, ))
+
+    t_cpu0.start()
+    t_cpu1.start()
+
+    logging.info('Thread {} spawned children'.format(threading.current_thread().getName()))
+
+    while not global_vars.done:
+        while global_vars.clock_barrier.n_waiting < 2:
+            time.sleep(0.001)
+
+        # logging.debug("Ambos hilos llegaron a clock")
+
+        for c in [core0, core1]:
+            if c.state == core.Core.IDL:
+                logging.debug('{:s} ya terminó'.format(c.name))
+
+        if core0.state == core.Core.IDL and core1.state == core.Core.IDL:
+            logging.info('Ambos Cores terminaron, finalizando simulación')
+            global_vars.done = True
+
+        global_vars.clock_barrier.wait()
+
+    t_cpu0.join()
+    t_cpu1.join()
+
+    logging.info('Finalizando simulación a continuación se presenta el estado final\n\n\n')
+
+    for i in range(len(programs)):
+        pcb = global_vars.scheduler.finished_queue.get_nowait()
+        logging.info(pcb)
+
+    logging.info(core0)
+    logging.info(cache_data0)
+    logging.info(core1)
+    logging.info(cache_data1)
+    logging.info(mem_data)
+
+
+
 def prueba_multicore():
 
     log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
@@ -222,4 +284,4 @@ def main():
 
 
 if __name__ == '__main__':
-    prueba_multicore()
+    prueba_multicore_lrsc()

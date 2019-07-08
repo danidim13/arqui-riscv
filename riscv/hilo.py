@@ -63,7 +63,7 @@ class Pcb(object):
 
 class Scheduler(object):
 
-    INIT_QUANTUM = 5
+    INIT_QUANTUM = 25
 
     def __init__(self):
         self.ready_queue = Queue()

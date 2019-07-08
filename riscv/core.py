@@ -110,7 +110,7 @@ class Core(object):
 
     def clock_tick(self):
         # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
-        logging.debug('%s waiting for clock sync', self.name)
+        # logging.debug('%s waiting for clock sync', self.name)
         self.clock += 1
         self._global_vars.clock_barrier.wait()
 
