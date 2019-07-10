@@ -12,10 +12,13 @@ from typing import List
 
 
 def main():
+    """
+    Raíz del programa principal de simulación
+
+    :return:
+    """
     parser = make_parser()
     args = parser.parse_args()
-
-    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
 
     if args.verbose == 0:
         level = logging.WARNING
@@ -24,9 +27,10 @@ def main():
     elif args.verbose > 1:
         level = logging.DEBUG
 
+    log_format = "[%(threadName)s %(asctime)s,%(msecs)03d]: %(message)s"
     logging.basicConfig(format=log_format, level=level, datefmt="%H:%M:%S")
 
-    print(str(args))
+    # print(str(args))
 
     if args.dir is not None:
         if not os.path.isdir(args.dir):
@@ -40,10 +44,24 @@ def main():
     else:
         parser.error('Error, no proporcionó hilillos')
 
-    return run_tmain(programas)
+    quantum = 0
+    print('Por favor indique el tamaño el quantum, no debe ser muy pequeño (> 10)')
+    while quantum < 10:
+        line = input('Quantum: ')
+        try:
+            quantum = int(line)
+        except ValueError:
+            print('Por favor escriba un número entero')
+
+    return run_tmain(programas, quantum)
 
 
 def make_parser():
+    """
+    Genera un objeto parser que procesa los argumentos por línea de comandos del programa y los textos de ayuda
+
+    :return:    El parser
+    """
     description_es = textwrap.dedent('''\
         Simulador de RISC-V multinucleo.
         Ejecuta los hilillos contenidos en cada ARCHIVO o en la CARPETA
@@ -82,6 +100,12 @@ def make_parser():
 
 
 def setup_modules(global_vars):
+    """
+    Crea todos los componentes de hardware y los conecta entre sí
+
+    :param global_vars: Objeto con los globales (barrera para sincronización, scheduler)
+    :return:            Todos los componentes de harwdare inicializados
+    """
     mem_data = memory.RamMemory('Memoria de datos', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)
     mem_inst = memory.RamMemory('Memoria de instrucciones', start_addr=384, end_addr=1024, num_blocks=40, bpp=4, ppb=4)
     core0 = core.Core('CPU0', global_vars)
@@ -108,6 +132,12 @@ def setup_modules(global_vars):
 
 
 def run_tcpu(cpu):
+    """
+    Corre el hilo de un core
+
+    :param cpu: El core
+    :return:
+    """
     print('Iniciando ejecución de {:s}'.format(cpu.name))
     logging.info('Running Core {:s}'.format(cpu.name))
     cpu.run()
@@ -122,11 +152,20 @@ def run_tcpu(cpu):
     return
 
 
-def run_tmain(programs: List[str]):
+def run_tmain(programs: List[str], quantum: int):
+    """
+    Corre el hilo principal de la simulación
 
+    :param programs:    Lista de archivos con los hilillos
+    :param quantum:     Tamaño del quantum
+    :return:
+    """
+
+    hilo.Scheduler.INIT_QUANTUM = quantum
     global_vars = util.GlobalVars(3)
     core0, cache_inst0, cache_data0, core1, cache_inst1, cache_data1, mem_inst, bus_inst, mem_data, bus_data = setup_modules(global_vars)
     mem_inst.data_format = 'default'
+    print(global_vars.scheduler.INIT_QUANTUM)
 
     inst_addr = 384
     util.cargar_hilos(programs, global_vars.scheduler, mem_inst, inst_addr)
@@ -169,7 +208,7 @@ def run_tmain(programs: List[str]):
     t_cpu0.join()
     t_cpu1.join()
 
-    print('\nFinalizando simulación a continuación se presenta el estado final\n\n')
+    print('\nFinalizando simulación, a continuación se presenta el estado final\n\n')
 
     hilillos = []
     for i in range(len(programs)):
@@ -188,11 +227,11 @@ def run_tmain(programs: List[str]):
 
     print('\n--------------- Core 0 ---------------\n')
     print(core0)
-    print('\n--------------- Caché 0 ---------------\n')
-    print(cache_data0)
     print('\n--------------- Core 1 ---------------\n')
     print(core1)
-    print('\n--------------- Caché 1 ---------------\n')
+    print('\n--------------- Caché de datos 0 ---------------\n')
+    print(cache_data0)
+    print('\n--------------- Caché de datos 1 ---------------\n')
     print(cache_data1)
     print('\n--------------- Memoria de datos ---------------\n')
     print(mem_data)
