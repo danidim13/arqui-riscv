@@ -6,17 +6,6 @@ import time
 from riscv import core, util, memory, hilo
 
 
-def run_cpu(cpu: core.Core):
-    logging.info('Iniciando ejecución de {:s}'.format(cpu.name))
-    cpu.run()
-
-    logging.info('Iddling Core {:s}'.format(cpu.name))
-
-    while not cpu._global_vars.done:
-        cpu.iddle()
-
-    logging.info('Finalizando ejecución de {:s}'.format(cpu.name))
-
 
 def setup_modules(global_vars):
     mem_data = memory.RamMemory('Memoria de datos', start_addr=0, end_addr=384, num_blocks=24, bpp=4, ppb=4)

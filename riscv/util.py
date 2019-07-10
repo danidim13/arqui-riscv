@@ -8,6 +8,15 @@ from .isa import encode, decode
 from .memory import RamMemory
 
 
+class GlobalVars(object):
+
+    def __init__(self, num_cpus: int):
+        self.clock_barrier = threading.Barrier(parties=num_cpus)
+        self.scheduler = Scheduler()
+
+        self.done = False
+
+
 def cargar_hilos(files: List[str], scheduler: Scheduler, inst_mem: RamMemory, start_addr: int):
 
     programs_loaded = 0
@@ -15,6 +24,7 @@ def cargar_hilos(files: List[str], scheduler: Scheduler, inst_mem: RamMemory, st
 
     for filename in files:
 
+        print('Cargando {:s} en memoria de datos, pid {:d}'.format(filename, programs_loaded))
         programa = read_hilo(filename)
         inst_mem.load(addr, programa)
         pcb = Pcb(programs_loaded, addr, filename)
@@ -46,10 +56,3 @@ def read_hilo(filename: str):
     return instructions
 
 
-class GlobalVars(object):
-
-    def __init__(self, num_cpus: int):
-        self.clock_barrier = threading.Barrier(parties=num_cpus)
-        self.scheduler = Scheduler()
-
-        self.done = False
