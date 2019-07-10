@@ -4,6 +4,7 @@ from typing import List
 
 
 class Pcb(object):
+    """Clase que modela el PCB de un hilillo"""
     pid: int
     name: str
     registers: List[int]
@@ -19,6 +20,7 @@ class Pcb(object):
     FINISHED = 2
 
     def __init__(self, pid: int = 0, starting_addr: int = 384, name: str = 'default'):
+
         assert pid >= 0
         assert 384 <= starting_addr < 1024
         self.pid = pid
@@ -62,6 +64,7 @@ class Pcb(object):
 
 
 class Scheduler(object):
+    """Scheduler"""
 
     INIT_QUANTUM = 25
 
@@ -70,13 +73,16 @@ class Scheduler(object):
         self.finished_queue = Queue()
 
     def next_ready_thread(self) -> Pcb:
+        """Obtiene el próximo hilillo que está listo para ejecutarse"""
         return self.ready_queue.get(block=False)
 
     def put_ready(self, item: Pcb):
+        """Guarda un hilillo en la cola de los que están listos para ejecutarse"""
         assert item.quantum == 0
         item.quantum = self.INIT_QUANTUM
         return self.ready_queue.put(item, block=False)
 
     def put_finished(self, item: Pcb):
+        """Guarda un hilillo en la cola de los que ya terminaron"""
         assert item.quantum == 0
         return self.finished_queue.put(item, block=False)

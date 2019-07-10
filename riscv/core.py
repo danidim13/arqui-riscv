@@ -19,6 +19,8 @@ OP_ROUTINE = (OpCodes.OP_JAL, OpCodes.OP_JALR)
 
 
 class Register(object):
+    """Clase que modela un registro del CPU"""
+
     address: int
     reg_type: str
     zero_reg: bool
@@ -83,6 +85,12 @@ class Core(object):
         self._misses = 0
 
     def run(self):
+        """
+        Corre el núcleo hasta que no haya hilillos pendientes de ejecución. Si el quanto es mayor que 0 manda a ejecutar
+        la siguiente instrucción, si no hace cambio de contexto del hilillo.
+
+        :return:
+        """
 
         # Obtener primer PCB
         self._pcb_in()
@@ -95,6 +103,11 @@ class Core(object):
                 self._context_switch()
 
     def step(self):
+        """
+        Ejecuta la siguiente instrucción. Decrementa en uno el quantum o lo pone en cero si la instrucción era FIN
+
+        :return:
+        """
 
         ins = self._fetch()
         op_code, rd, rf1, rf2, inm = self._decode(ins)
@@ -111,16 +124,32 @@ class Core(object):
         self.clock_tick()
 
     def clock_tick(self):
+        """
+        Avanza en uno el reloj. Sincroniza con la barrera global.
+
+        :return:
+        """
         # logging.debug('Barrier id: {0:d}'.format(id(self.__global_vars.clock_barrier)))
         # logging.debug('%s waiting for clock sync', self.name)
         self.clock += 1
         self._global_vars.clock_barrier.wait()
 
     def iddle(self):
+        """
+        No hace nada, pero espera en la barrera. Este método se usa luego de que un procesador ya terminó, mientras
+        el otro está corriendo para que no bloquee infinitamente en la barrera que sincroniza los relojes.
+
+        :return:
+        """
         logging.debug('%s waiting for clock sync', self.name)
         self._global_vars.clock_barrier.wait()
 
     def _context_switch(self):
+        """
+        Maneja el cambio de contexto. Saca el pcb actual y obtiene uno nuevo.
+
+        :return:
+        """
         logging.debug('{:s} haciendo CONTEXT SWITCH'.format(self.name))
 
         self.__lr_lock.acquire()
@@ -132,6 +161,12 @@ class Core(object):
         self.clock_tick()
 
     def _pcb_out(self):
+        """
+        Saca el PCB que estaba ejectuando. Actualiza el número de ciclos corridos y los registos. Si ya terminó lo
+        guarda en la cola de terminados del scheduler, si no lo vuelve a guardar en la cola de hilillos en espera
+
+        :return:
+        """
         assert self.__pcb is not None
         assert self.__pcb.quantum == 0
 
@@ -153,6 +188,12 @@ class Core(object):
         self.__pcb = None
 
     def _pcb_in(self):
+        """
+        Obtiene un nuevo pcb para ejecución y copia el contexto al procesador. Si ya no quedan hilillos cambia el
+        estado del procesador a IDL
+
+        :return:
+        """
 
         assert self.__pcb is None
 
@@ -190,6 +231,11 @@ class Core(object):
             self.state = self.IDL
 
     def _fetch(self):
+        """
+        Etapa de fetch del pipeline, obtiene la instrucción y actualiza PC
+
+        :return:    La instucción codificada
+        """
 
         ins, hit = self.inst_cache.load(self.pc.data)
 
@@ -200,6 +246,12 @@ class Core(object):
         return ins
 
     def _decode(self, instruction: int):
+        """
+        Estapa de decode del pipeline, decodifica la instrucción en el código de operación y los argumentos
+
+        :param instruction:     La instucción codificada
+        :return:                Código de operación, registro destido, registros fuentes e inmediato, según sea el caso
+        """
         op_code, arg1, arg2, arg3 = isa_decode(instruction)
         op_code = OpCodes(op_code)
 
@@ -244,6 +296,17 @@ class Core(object):
         return op_code, rd, rf1, rf2, inm
 
     def _execute(self, op_code: OpCodes, rf1: int, rf2: int, inm: int):
+        """
+        Etapa de ejecución del pipeline, hace los cálculos de la operación, dirección de acceso a memoria o condición
+        del salto.
+
+        :param op_code:     Código de operación
+        :param rf1:         Registro fuente
+        :param rf2:         Registro fuente
+        :param inm:         Valor inmediato
+        :return:            Resultado de la operación, dirección de memoria, salto tomado y dirección de salto según sea
+                            el caso
+        """
 
         # FIXME: xd y memd se pueden fusionar en una sola variable (alu_out)
         xd = None
@@ -323,6 +386,15 @@ class Core(object):
         return xd, memd, jmp, jmp_target
 
     def _memory(self, op_code: OpCodes, memd: int, rf2: int, xd: int):
+        """
+        Etapa de acceso a memoria del pipeline, se encarga de hacer load/store y lr/sc
+
+        :param op_code:     Código de operación
+        :param memd:        Dirección de memoria
+        :param rf2:         Registro fuente (contiene el dato para store)
+        :param xd:          Resultado de la ALU, lo sobre escribe con el dato obtenido en load si es el caso
+        :return:            Resultado de load o resultado de ALU si el OPCODE no era Load o LR
+        """
 
         if op_code == OpCodes.OP_LW:
             xd, hit = self.data_cache.load(memd)
@@ -379,6 +451,18 @@ class Core(object):
         return xd
 
     def _write_back(self, op_code, rd, xd, jmp, jmp_target):
+        """
+        Etapa de writeback del pipeline, escribe al registro destino el resultado de la operación o la carga de datos
+        de memoria. También maneja los saltos (a pesar de que esto se puede hacer antes como se vio en la teoría era más
+        sencillo para debug hacerlo acá).
+
+        :param op_code:
+        :param rd:
+        :param xd:
+        :param jmp:
+        :param jmp_target:
+        :return:
+        """
         if op_code in OP_ROUTINE or op_code in OP_BRANCH:
             if jmp:
                 self.pc.data = jmp_target

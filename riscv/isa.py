@@ -17,6 +17,7 @@ INS_LENGTH = 32
 
 
 class OpCodes(Enum):
+    """Códigos de operación"""
     OP_NOOP = 0
     OP_ADDI = 19
 
@@ -66,6 +67,7 @@ def dec_arg3(instruction: int):
 
 
 def decode(instruction: int):
+    """Decodifica una instrucción guardada en un int"""
     op = dec_opcode(instruction)
     if op == OpCodes.OP_FIN_HEX.value:
         op = OpCodes.OP_FIN.value
@@ -76,6 +78,7 @@ def decode(instruction: int):
 
 
 def encode(opcode: int, arg1: int, arg2: int, arg3: int):
+    """Codifica una instrucción para que quepa en un int"""
 
     arg3_bits = INS_LENGTH - BS_ARG3
     assert 0 <= opcode < 2**8 or opcode == 999

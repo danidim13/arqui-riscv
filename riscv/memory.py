@@ -615,6 +615,12 @@ class CacheMemAssoc(object):
             waiting_core.clock_tick()
 
     def _acquire_local(self, waiting_core: 'Core' = None):
+        """
+        Intenta bloquear la caché
+
+        :param waiting_core:  El núcleo que espera si la caché está ocupada
+        :return:
+        """
 
         if waiting_core is None:
             waiting_core = self.owner_core
@@ -629,12 +635,17 @@ class CacheMemAssoc(object):
             else:
                 logging.debug('Failed to get {:s} cache lock'.format(self.name))
 
-
             waiting_core.clock_tick()
 
         return
 
     def _acquire_with_bus(self, waiting_core: 'Core' = None):
+        """
+        Intenta bloquear el bus y la caché
+
+        :param waiting_core:  El núcleo que espera si el bus o la caché está ocupada
+        :return:
+        """
 
         if waiting_core is None:
             waiting_core = self.owner_core
@@ -659,11 +670,21 @@ class CacheMemAssoc(object):
         return
 
     def _release_local(self):
+        """
+        Libera la caché
+
+        :return:
+        """
         logging.debug('Releasing {:s} cache lock'.format(self.name))
         self.lock.release()
         return
 
     def _release_with_bus(self):
+        """
+        Libera el bus y la caché
+
+        :return:
+        """
         logging.debug('Releasing bus and {:s} cache lock'.format(self.name))
         self.lock.release()
         self.bus.lock.release()
@@ -671,6 +692,7 @@ class CacheMemAssoc(object):
 
 
 class RamBlock(object):
+    """Clase que modela un bloque de memoria principal"""
 
     def __init__(self, address: int, palabras: int = 4, bpp: int = 4):
         assert(address % bpp == 0)
@@ -685,6 +707,7 @@ class RamBlock(object):
 
 
 class RamMemory(object):
+    """Clase que modela la memoria principal"""
 
     blocks: List[RamBlock]
 
@@ -712,9 +735,22 @@ class RamMemory(object):
         self.data_format = 'default'
 
     def get(self, addr: int) -> RamBlock:
+        """
+        Obtiene el bloque que contiene una dirección de memoria
+
+        :param addr:    La dirección de memoria
+        :return:        El bloque
+        """
         return self._find(addr)
 
     def set(self, addr: int, cache_block: CacheBlock):
+        """
+        Actualiza los datos de un bloque que contiene una dirección de memoria a partir de un bloque de caché
+
+        :param addr:            La dirección de memoria
+        :param cache_block:     El bloque con los datos nuevos
+        :return:
+        """
         assert self.ppb == len(cache_block.data)
         assert self.bpp == cache_block.bpp
         block = self._find(addr)
@@ -722,6 +758,13 @@ class RamMemory(object):
         return
 
     def load(self, addr: int, data: List[int]):
+        """
+        Carga una serie de datos de manera consecutiva a partir de una dirección inicial en la memoria
+
+        :param addr:    Dirección inicial donde guardar los datos
+        :param data:    Los datos a guardar
+        :return:
+        """
         bn_i = (addr - self.__start_addr) // (self.ppb * self.bpp)
         off_i = ((addr - self.__start_addr) % (self.ppb * self.bpp)) // self.bpp
 
@@ -739,6 +782,12 @@ class RamMemory(object):
         logging.debug('Finished copying last address @ 0x{:04X},  next = [block {:d} offset {:d}]'.format(last_addr, bn_i, off_i))
 
     def _find(self, addr: int):
+        """
+        Obtiene el bloque correspondiente a una dirección de memoria
+
+        :param addr:    La dirección de memoria
+        :return:        El bloque
+        """
         assert self.__start_addr <= addr < self.__end_addr
 
         block_num = (addr - self.__start_addr) // (self.ppb * self.bpp)
@@ -782,6 +831,15 @@ class Bus(object):
             cache.bus = self
 
     def snoop_shared(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
+        """
+        Hace snooping para lectura con el protocolo MSI. Busca un bloque para una dirección de memoria, si está
+        modificado en otra caché hace writeback y lo deja compartido. Si no lo encuentra en ninguna caché lo
+        obtiene de memoria.
+
+        :param addr:        La dirección de memoria solicitada
+        :param requester:   La caché que solicita
+        :return:            El bloque con los datos
+        """
         assert requester in self.__caches
 
         block = None
@@ -820,6 +878,16 @@ class Bus(object):
         return block
 
     def snoop_exclusive(self, addr: int, requester: CacheMemAssoc) -> RamBlock:
+        """
+        Hace snooping para escritura con el protocolo MSI. Busca un bloque para una dirección de memoria, si está
+        modificado en otra caché hace writeback y lo deja compartido. Si está compartido lo invalida. Si no lo encuentra
+        en ninguna caché lo obtiene de memoria. También indica a las cachés de deben invalidar la reserva de LR en ese
+        bloque (si la tenían)
+
+        :param addr:        La dirección de memoria solicitada
+        :param requester:   La caché que solicita
+        :return:            El bloque con los datos
+        """
         assert requester in self.__caches
 
         block = None
@@ -865,6 +933,14 @@ class Bus(object):
         return block
 
     def write_back(self, addr: int, block: CacheBlock, requester: CacheMemAssoc):
+        """
+        Escribe un bloque de caché correspondiente a una dirección en memoria
+
+        :param addr:        La dirección
+        :param block:       El bloque de caché
+        :param requester:   La caché que hace la escritura
+        :return:
+        """
         logging.debug('Write back requested by for address {:d}, block: [{:s}]'.format(addr, str(block), hex(id(requester))))
         self.__memory.set(addr, block)
         return
