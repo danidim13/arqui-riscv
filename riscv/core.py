@@ -79,6 +79,8 @@ class Core(object):
         self.inst_cache = None
         self.state = self.RUN
         self.log = {}
+        self._hits = 0
+        self._misses = 0
 
     def run(self):
 
@@ -327,6 +329,9 @@ class Core(object):
             assert type(xd) == int
             if not hit:
                 logging.info('Miss de lectura @(0x{:04X})'.format(memd))
+                self._misses += 1
+            else:
+                self._hits += 1
 
         elif op_code == OpCodes.OP_SW:
             word = self.registers[rf2].data
@@ -334,12 +339,18 @@ class Core(object):
             hit = self.data_cache.store(memd, word)
             if not hit:
                 logging.info('Miss de escritura @(0x{:04X})'.format(memd))
+                self._misses += 1
+            else:
+                self._hits += 1
 
         elif op_code == OpCodes.OP_LR:
             xd, hit = self.data_cache.load_reserved(memd)
             assert type(xd) == int
             if not hit:
                 logging.info('Miss de lectura reservada @(0x{:04X})'.format(memd))
+                self._misses += 1
+            else:
+                self._hits += 1
 
         elif op_code == OpCodes.OP_SC:
 
@@ -352,6 +363,9 @@ class Core(object):
                 hit, success = self.data_cache.store_conditional(memd, word)
                 if not hit:
                     logging.info('Miss de escritura condicional @(0x{:04X})'.format(memd))
+                    self._misses += 1
+                else:
+                    self._hits += 1
             else:
                 logging.info('Reserva rota @(0x{:04X})'.format(memd))
 
@@ -392,7 +406,22 @@ class Core(object):
                     reg_str += ' '
 
         reg_str += '\n]'
-        format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nRegs:\n{regs:s}\n'
+
+
+        pcb_str = '[\n'
+        for k, v in self.log.items():
+            pcb_str += ' PID {:02d}: {:d} corridas\n'.format(k, v)
+
+        pcb_str += ']'
+
+
+
+        miss_rate = (self._misses) / float(self._hits + self._misses)
+        format_str = '{name:s}:\nPC: {pc:d}, LR: {lr:d}, ticks: {clock:d}\nTotal de solicitudes de acceso a memoria:' \
+                     ' {total:d}\nTotal de fallos de caché: {miss:d}\nTaza de fallos: {missr:.1f}%\nRegistros:\n' \
+                     '{regs:s}\nHilos corridos:\n{hilos:s}\n'
+
         return format_str.format(name=self.name, pc=self.pc.data, lr=self.__lr.data, clock=self.clock,
-                                 regs=reg_str)
+                                 regs=reg_str, missr=miss_rate*100, total=(self._hits+self._misses),
+                                 miss=self._misses, hilos=pcb_str)
 

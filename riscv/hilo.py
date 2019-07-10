@@ -57,8 +57,8 @@ class Pcb(object):
 
         reg_str += '\n]'
 
-        format_str = 'P{:02d}: hilo "{:s}" con estado {:s}\nPc: {:d}, ciclos: {:d}, hits: {:d}, misses: {:d}\nRegs:\n{:s}\n'
-        return format_str.format(self.pid, self.name, estado, self.pc, self.ticks, self.hits, self.misses, reg_str)
+        format_str = 'P{:02d}: hilo "{:s}" con estado {:s}\nPc: {:d}, ciclos corridos: {:d}\nRegs:\n{:s}\n'
+        return format_str.format(self.pid, self.name, estado, self.pc, self.ticks, reg_str)
 
 
 class Scheduler(object):
